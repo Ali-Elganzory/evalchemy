@@ -27,7 +27,7 @@ class GSM8KBenchmark(BaseBenchmark):
         data_file: str = "eval/chat_benchmarks/GSM8K/data/gsm8k.jsonl",
         debug: bool = False,
         seed: Optional[List[int]] = None,
-        max_tokens: int = 32768,
+        max_tokens: int = 512,
         logger: Optional[logging.Logger] = None,
         system_instruction: Optional[str] = None,
     ):
