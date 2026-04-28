@@ -6,11 +6,9 @@ build-backend = "hatchling.build"
 name = "evalchemy"
 version = "0.1.0"
 description = "Evalchemy Evaluation Framework"
-authors = [
-    { name = "Your Name", email = "your.email@example.com" },
-]
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = "==3.12.*"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,29 +21,32 @@ classifiers = [
 
 dependencies = [
     # Core ML and Deep Learning
-    "torch",
+    # "vllm<0.10.2",
+    # "flashinfer-python",
+    "torch==2.7.0",
     "torchvision",
-    "transformers",
+    "transformers==4.57.6",
+    "triton==3.3.0",
     "accelerate",
     "peft",
     "trl",
     "bitsandbytes",
     "sentencepiece",
-    "sentence-transformers>=2.2.2",
+    "sentence-transformers",
     "optimum==1.12.0",
-    
+
     # Machine Learning and Scientific Computing
     "numpy",
     "pandas",
     "scipy",
     "scikit-learn",
-    "faiss-cpu==1.7.4",
-    
+    "faiss-cpu",
+
     # ML Experiment Tracking & Visualization
     "wandb",
     "tensorboard",
     "evaluate",
-    
+
     # NLP & Text Processing
     "nltk",
     "fasttext-wheel",
@@ -54,7 +55,7 @@ dependencies = [
     "langdetect",
     "fuzzywuzzy",
     "python-Levenshtein",
-    
+
     # Data Processing & Parsing
     "datasets",
     "protobuf",
@@ -64,7 +65,7 @@ dependencies = [
     "jsonpickle",
     "hjson",
     "msgpack",
-    
+
     # AI Service Providers
     "openai",
     "anthropic",
@@ -74,19 +75,19 @@ dependencies = [
     "reka-api",
     "together",
     "dashscope",
-    "fschat @ file:eval/chat_benchmarks/MTBench",  # Use relative path that pip will resolve during installation
-    
+    # "fschat @ file:eval/chat_benchmarks/MTBench",  # Use relative path that pip will resolve during installation
+
     # Cloud & Storage
     "gcsfs",
     "google-cloud-aiplatform",
-    "google-auth==2.25.1",
+    "google-auth",
     "boto3",
     "botocore",
     "sagemaker",
-    "fsspec==2024.6.1",
+    "fsspec",
     "hf-transfer",
     "huggingface_hub[cli]",
-    
+
     # Code Analysis & Development
     "black",
     "tree-sitter-python",
@@ -95,7 +96,7 @@ dependencies = [
     "asttokens",
     "mypy_extensions",
     "pyext @ git+https://github.com/penfever/PyExt",
-    
+
     # Web & API
     "fastapi>=0.101.0",
     "uvicorn>=0.23.0",
@@ -106,13 +107,13 @@ dependencies = [
     "websocket",
     "aiofiles",
     "bespokelabs-curator>=0.1.16.0",
-    
+
     # Database
     "sqlalchemy",
     "psycopg[binary]",
     "psycopg2-binary",
     "sqlitedict",
-    
+
     # Utilities
     "tqdm",
     "pqdm",
@@ -154,22 +155,34 @@ dependencies = [
     "swebench>=3.0.4",
 
     # LM Eval
-    "lm-eval[vllm] @ git+https://github.com/EtashGuha/lm-evaluation-harness@etashg/tokenize_fix",
+    "lm-eval @ git+https://github.com/EtashGuha/lm-evaluation-harness@etashg/tokenize_fix",
+
+    # Utilities
+    # "pdflatex==0.1.3",
 ]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu128"},
+]
+torchvision = [
+  { index = "pytorch-cu128"},
+]
+triton = [
+  { index = "pytorch-cu128"},
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [project.urls]
 Homepage = "https://github.com/mlfoundations/evalchemy"
 Repository = "https://github.com/mlfoundations/evalchemy.git"
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "black",
-    "isort",
-    "flake8",
-    "pre-commit",
-    "isort",
-]
+dev = ["pytest", "black", "isort", "flake8", "pre-commit", "isort"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["evalchemy", "database"]
@@ -193,3 +206,8 @@ packages = ["evalchemy"]
 
 [tool.setuptools.package-dir]
 evalchemy = "evalchemy"
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+]
