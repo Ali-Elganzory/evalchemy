@@ -228,5 +228,6 @@ eval/chat_benchmarks/MixEval/mix_eval/eval_scripts
 eval/chat_benchmarks/MixEval/results
 results/
 
-# mv_exp
-mv_exp/eval_scripts/
+# scripts (generated SLURM scripts)
+scripts/eval_scripts/
+scripts/batch_size_discovery_scripts/

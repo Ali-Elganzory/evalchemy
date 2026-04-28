@@ -142,6 +142,7 @@ dependencies = [
     "threadpoolctl",
     "jmespath",
     "immutabledict",
+    "jinja2",
 
     # BigCodeBench
     "appdirs>=1.4.4",

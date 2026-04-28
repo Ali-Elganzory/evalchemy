@@ -1,0 +1,123 @@
+#!/bin/bash
+#SBATCH --job-name={{ job_name }}
+#SBATCH --output={{ slurm_logs_prefix }}/{{ model_short }}/{{ task }}_%j.%x.%N.out
+#SBATCH --error={{ slurm_logs_prefix }}/{{ model_short }}/{{ task }}_%j.%x.%N.err
+#SBATCH --time={{ slurm_max_time }}
+#SBATCH --partition={{ slurm_partition }}
+#SBATCH --account={{ slurm_account }}
+#SBATCH --nodes={{ num_nodes }}
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-gpu={{ slurm_cpus_per_gpu }}
+#SBATCH --gres=gpu:{{ gpus_per_node }}
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user={{ slurm_mail_user }}
+
+# Resource configuration (can be tweaked per-script if needed)
+NUM_NODES={{ num_nodes }}
+GPUS_PER_NODE={{ gpus_per_node }}
+{% if num_nodes > 1 %}
+
+# 1. Set master (batch script runs on first allocated node)
+MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+export MASTER_ADDR="${MASTER_ADDR}"
+# Prefer IPv4 from NSS (avoids IPv6 / ambiguous nslookup Address lines for Gloo TCP rendezvous).
+MASTER_IP=$(getent ahostsv4 "$MASTER_ADDR" | awk '/^[0-9]/ {print $1; exit}')
+if [ -z "$MASTER_IP" ]; then
+    MASTER_IP=$(nslookup "$MASTER_ADDR" | awk '/^Address: / { print $2 }' | tail -n 1)
+fi
+export MASTER_IP
+export MASTER_PORT=$((29500 + SLURM_JOB_ID % 2000))
+
+if [ -z "$MASTER_ADDR" ]; then
+    echo "ERROR: Could not find MASTER_ADDR."
+    exit 1
+fi
+
+# 2. High-performance tuning for NCCL on multi-rail IB
+export NCCL_IB_HCA=mlx5
+export NCCL_IB_RETRY_CNT=7
+export NCCL_IB_TIMEOUT=120
+export NCCL_DEBUG=INFO
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+export OMP_NUM_THREADS=1
+
+# Gloo/TCP (elastic rendezvous) may need GLOO_SOCKET_IFNAME; NCCL_* affects GPU collectives after rendezvous.
+{{ socket_exports }}
+# 3. Calculate world size
+export NUM_NODES=$SLURM_NNODES
+export GPUS_PER_NODE={{ gpus_per_node }}
+export WORLD_SIZE=$(($NUM_NODES * $GPUS_PER_NODE))
+
+echo "Master Node: $MASTER_ADDR"
+echo "Master IP: $MASTER_IP"
+echo "Master Port: $MASTER_PORT"
+echo "NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-}  GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-}"
+
+# Rendezvous: if c10d logs still show hostname, ensure workers reach $MASTER_IP:$MASTER_PORT; set ifnames per site docs.
+{{ debug_timeout_block }}
+{% endif %}
+export WORK_DIR={{ work_dir }}
+export EVALCHEMY_DIR=$WORK_DIR/evalchemy
+export TMPDIR=$WORK_DIR/.tmp
+export TMP=$TMPDIR
+
+# Force Transformers and Hub into offline mode
+export TRANSFORMERS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+
+# If you are using Hugging Face Datasets as well
+export HF_DATASETS_OFFLINE=1
+
+export WANDB_MODE="offline"
+
+# 1. Evaluation arguments
+MODEL_NAMES=(
+    "{{ model }}"
+)
+TASKS=(
+    "{{ task }}"
+)
+
+# 2. Go to evalchemy directory
+cd $EVALCHEMY_DIR
+
+# 3. Activate the environment
+{% for mod in slurm_modules -%}
+module load {{ mod }}
+{% endfor -%}
+source .venv/bin/activate
+
+export SRUN_CPUS_PER_TASK={{ srun_cpus_per_task }}
+
+# 4. Run evaluation
+for MODEL in "${MODEL_NAMES[@]}"; do
+    for TASK in "${TASKS[@]}"; do
+        echo "==========================================================="
+        echo "Starting evaluation"
+        echo "Model: $MODEL"
+        echo "Task: $TASK"
+        echo "==========================================================="
+{% if num_nodes > 1 %}
+        export LAUNCHER="accelerate launch \
+    --num_machines $NUM_NODES \
+    --num_processes $WORLD_SIZE \
+    --main_process_ip $MASTER_IP \
+    --main_process_port $MASTER_PORT \
+    --machine_rank \$SLURM_PROCID \
+    --same_network \
+    --max_restarts 0 \
+    --role \$(hostname -s): \
+    --multi_gpu -m eval.eval"
+        export CMD="--model hf --tasks \"$TASK\" --model_args \"trust_remote_code=True,pretrained=$MODEL\" --batch_size {{ cached_batch_size }} --output_path logs"
+        srun --ntasks=$NUM_NODES --export=ALL --wait=60 --kill-on-bad-exit=1 bash -c "$LAUNCHER $CMD"
+{% else %}
+        srun --ntasks=1 --export=ALL --wait=60 --kill-on-bad-exit=1 accelerate launch --num-processes "$GPUS_PER_NODE" --num-machines 1 \
+            --multi-gpu -m eval.eval \
+            --model hf \
+        --tasks "$TASK" \
+        --model_args "trust_remote_code=True,pretrained=$MODEL" \
+        --batch_size {{ cached_batch_size }} \
+        --output_path logs
+{% endif %}
+    done
+done

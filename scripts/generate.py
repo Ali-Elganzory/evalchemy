@@ -9,32 +9,112 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+from dotenv import dotenv_values
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # ---------------------------------------------------------------------------
-# Configuration for generated SLURM scripts
+# Static (non-cluster) configuration
 # ---------------------------------------------------------------------------
-# Number of nodes to request in SLURM.  Use 1 for single-node jobs.
-NUM_NODES = 1
-
-# Number of GPUs per node.
-GPUS_PER_NODE = 1
-
-# Optional: set on multi-node if Jupiter/cluster docs require a specific host interface
-# for NCCL or for Gloo/TCP rendezvous (the latter runs before NCCL collectives).
-NCCL_SOCKET_IFNAME = ""
-GLOO_SOCKET_IFNAME = ""
-
-# When True, shorten distributed timeouts and enable verbose dist logs (debugging only).
-DEBUG_SHORT_DIST_TIMEOUT = False
-
-EXPERIMENT_PATH = "/e/project1/jureap59/ali/post-training/outputs/sft-olmo-3-1025-7b-nemotron_pt_v2-20260221-162923/inference_checkpoints"
-
 BATCH_SIZE_CACHE_FILENAME = "batch_size_cache.json"
 DISCOVERY_SCRIPTS_DIRNAME = "batch_size_discovery_scripts"
+EVAL_SCRIPTS_DIRNAME = "eval_scripts"
+
+# Layout under $EVALCHEMY_DIR. Used inside generated SLURM scripts so they can
+# resolve the discovery CLI and shared cache file.
+SCRIPTS_REL_DIR = "scripts"
+DISCOVER_PYTHON_RELPATH = f"{SCRIPTS_REL_DIR}/discover_batch_size.py"
+CACHE_FILE_RELPATH = f"{SCRIPTS_REL_DIR}/{BATCH_SIZE_CACHE_FILENAME}"
+SLURM_LOGS_PREFIX = "slurm_logs/mv_exp"
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = SCRIPTS_DIR.parent / "templates"
+DISCOVERY_TEMPLATE_NAME = "batch_size_discovery.slurm.j2"
+EVAL_TEMPLATE_NAME = "benchmark_evaluation.slurm.j2"
+
+SUPPORTED_CLUSTERS = ("jupiter", "leonardo")
+
+
+# ---------------------------------------------------------------------------
+# Cluster configuration loaded from per-cluster .env files
+# ---------------------------------------------------------------------------
+def _str_to_bool(value: str, *, key: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", ""}:
+        return False
+    raise ValueError(f"Cannot parse boolean from {key}={value!r}")
+
+
+@dataclass(frozen=True)
+class ClusterConfig:
+    cluster: str
+    slurm_account: str
+    slurm_partition: str
+    slurm_mail_user: str
+    slurm_cpus_per_gpu: int
+    discovery_slurm_max_time: str
+    eval_slurm_max_time: str
+    work_dir: str
+    modules: tuple[str, ...]
+    nccl_socket_ifname: str
+    gloo_socket_ifname: str
+    num_nodes: int
+    gpus_per_node: int
+    debug_short_dist_timeout: bool
+
+    @classmethod
+    def from_env(cls, cluster: str) -> "ClusterConfig":
+        env_path = SCRIPTS_DIR / f"{cluster}.env"
+        if not env_path.exists():
+            raise FileNotFoundError(f"Cluster env file not found: {env_path}")
+
+        raw = {k: v for k, v in dotenv_values(env_path).items() if v is not None}
+
+        required = (
+            "SLURM_ACCOUNT",
+            "SLURM_PARTITION",
+            "SLURM_MAIL_USER",
+            "SLURM_CPUS_PER_GPU",
+            "DISCOVERY_SLURM_MAX_TIME",
+            "EVAL_SLURM_MAX_TIME",
+            "WORK_DIR",
+            "MODULES",
+            "EVAL_NUM_NODES",
+            "EVAL_GPUS_PER_NODE",
+            "DEBUG_SHORT_DIST_TIMEOUT",
+        )
+        missing = [k for k in required if k not in raw]
+        if missing:
+            raise KeyError(
+                f"Missing required keys in {env_path}: {', '.join(missing)}"
+            )
+
+        modules = tuple(m for m in raw["MODULES"].split() if m)
+
+        return cls(
+            cluster=cluster,
+            slurm_account=raw["SLURM_ACCOUNT"],
+            slurm_partition=raw["SLURM_PARTITION"],
+            slurm_mail_user=raw["SLURM_MAIL_USER"],
+            slurm_cpus_per_gpu=int(raw["SLURM_CPUS_PER_GPU"]),
+            discovery_slurm_max_time=raw["DISCOVERY_SLURM_MAX_TIME"],
+            eval_slurm_max_time=raw["EVAL_SLURM_MAX_TIME"],
+            work_dir=raw["WORK_DIR"],
+            modules=modules,
+            nccl_socket_ifname=raw.get("NCCL_SOCKET_IFNAME", ""),
+            gloo_socket_ifname=raw.get("GLOO_SOCKET_IFNAME", ""),
+            num_nodes=int(raw["EVAL_NUM_NODES"]),
+            gpus_per_node=int(raw["EVAL_GPUS_PER_NODE"]),
+            debug_short_dist_timeout=_str_to_bool(
+                raw["DEBUG_SHORT_DIST_TIMEOUT"], key="DEBUG_SHORT_DIST_TIMEOUT"
+            ),
+        )
 
 
 # Define the models (only uncommented/active models are used to generate scripts)
@@ -154,46 +234,45 @@ TASKS = [
 ]
 
 
-def _multi_node_socket_exports_bash() -> str:
+def _multi_node_socket_exports_bash(cluster: ClusterConfig) -> str:
     """Optional export lines for NCCL / Gloo socket interface (empty constants = no lines)."""
     lines: list[str] = []
-    if NCCL_SOCKET_IFNAME.strip():
-        lines.append(f'export NCCL_SOCKET_IFNAME="{NCCL_SOCKET_IFNAME.strip()}"')
-    if GLOO_SOCKET_IFNAME.strip():
-        lines.append(f'export GLOO_SOCKET_IFNAME="{GLOO_SOCKET_IFNAME.strip()}"')
+    if cluster.nccl_socket_ifname.strip():
+        lines.append(f'export NCCL_SOCKET_IFNAME="{cluster.nccl_socket_ifname.strip()}"')
+    if cluster.gloo_socket_ifname.strip():
+        lines.append(f'export GLOO_SOCKET_IFNAME="{cluster.gloo_socket_ifname.strip()}"')
     return ("\n".join(lines) + "\n") if lines else ""
 
 
-def _multi_node_debug_timeout_bash() -> str:
-    if DEBUG_SHORT_DIST_TIMEOUT:
-        return """
-# Shorter distributed timeouts for faster feedback while debugging (not for production).
-export TORCH_DISTRIBUTED_DEFAULT_TIMEOUT=0:03:0
-export TORCH_DISTRIBUTED_DEBUG=DETAIL
-"""
-    return """
-# Debug: uncomment for faster rendezvous failure or richer dist logs (verify names for your PyTorch build).
-# export TORCH_DISTRIBUTED_DEFAULT_TIMEOUT=0:03:0
-# export TORCH_DISTRIBUTED_DEBUG=DETAIL
-# torchrun also exposes --rdzv_timeout (seconds) if you bypass Accelerate.
-"""
+def _multi_node_debug_timeout_bash(cluster: ClusterConfig) -> str:
+    if cluster.debug_short_dist_timeout:
+        return (
+            "\n# Shorter distributed timeouts for faster feedback while debugging (not for production).\n"
+            "export TORCH_DISTRIBUTED_DEFAULT_TIMEOUT=0:03:0\n"
+            "export TORCH_DISTRIBUTED_DEBUG=DETAIL\n"
+        )
+    return (
+        "\n# Debug: uncomment for faster rendezvous failure or richer dist logs (verify names for your PyTorch build).\n"
+        "# export TORCH_DISTRIBUTED_DEFAULT_TIMEOUT=0:03:0\n"
+        "# export TORCH_DISTRIBUTED_DEBUG=DETAIL\n"
+        "# torchrun also exposes --rdzv_timeout (seconds) if you bypass Accelerate.\n"
+    )
 
 
-def generate_model_names_section(active_model: str) -> str:
-    """Generate the MODEL_NAMES array with only the active model uncommented."""
-    # Only output the active model (no commented-out lines for excluded models)
-    lines = ["MODEL_NAMES=("]
-    lines.append(f'    "{active_model}"')
-    lines.append(")")
-    return "\n".join(lines)
+_jinja_env: Environment | None = None
 
 
-def generate_tasks_section(active_task: str) -> str:
-    """Generate the TASKS array with only the active task uncommented."""
-    lines = ["TASKS=("]
-    lines.append(f'    "{active_task}"')
-    lines.append(")")
-    return "\n".join(lines)
+def _get_jinja_env() -> Environment:
+    global _jinja_env
+    if _jinja_env is None:
+        _jinja_env = Environment(
+            loader=FileSystemLoader(str(TEMPLATES_DIR)),
+            keep_trailing_newline=True,
+            trim_blocks=False,
+            lstrip_blocks=False,
+            undefined=StrictUndefined,
+        )
+    return _jinja_env
 
 
 def get_batch_size_cache_path(script_dir: Path) -> Path:
@@ -232,217 +311,68 @@ def resolve_cached_batch_size(
     return batch_size_cache.get(model, {}).get(task)
 
 
-def generate_discovery_script(model: str, task: str) -> str:
-    model_names_section = generate_model_names_section(model)
-    tasks_section = generate_tasks_section(task)
-
+def generate_discovery_script(model: str, task: str, cluster: ClusterConfig) -> str:
     model_short = model.split("/")[-1]
     job_name = f"discover_bs_{model_short}_{task}"
 
-    return f"""#!/bin/bash
-#SBATCH --job-name={job_name}
-#SBATCH --output=slurm_logs/mv_exp/{model_short}/{task}_discover_bs_%j.%x.%N.out
-#SBATCH --error=slurm_logs/mv_exp/{model_short}/{task}_discover_bs_%j.%x.%N.err
-#SBATCH --time=00-01:00:00
-#SBATCH --partition=booster
-#SBATCH --account=reformo
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-gpu=18
-#SBATCH --gres=gpu:1
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=alielganzory@hotmail.com
-
-export WORK_DIR=/e/project1/reformo/ali
-export EVALCHEMY_DIR=$WORK_DIR/evalchemy
-export TMPDIR=$WORK_DIR/.tmp
-export TMP=$TMPDIR
-
-export TRANSFORMERS_OFFLINE=1
-export HF_HUB_OFFLINE=1
-export HF_DATASETS_OFFLINE=1
-export WANDB_MODE="offline"
-
-{model_names_section}
-{tasks_section}
-
-cd $EVALCHEMY_DIR
-
-module load Stages/2025
-module load CUDA/12
-source .venv/bin/activate
-
-export SRUN_CPUS_PER_TASK=18
-
-for MODEL in "${{MODEL_NAMES[@]}}"; do
-    for TASK in "${{TASKS[@]}}"; do
-        echo "==========================================================="
-        echo "Starting batch-size discovery"
-        echo "Model: $MODEL"
-        echo "Task: $TASK"
-        echo "==========================================================="
-        srun --ntasks=1 --export=ALL --wait=60 --kill-on-bad-exit=1 python mv_exp/discover_batch_size.py \\
-            --model "$MODEL" \\
-            --task "$TASK" \\
-            --cache-file "$EVALCHEMY_DIR/mv_exp/{BATCH_SIZE_CACHE_FILENAME}" \\
-            --output-path logs
-    done
-done
-"""
+    template = _get_jinja_env().get_template(DISCOVERY_TEMPLATE_NAME)
+    return template.render(
+        job_name=job_name,
+        model=model,
+        model_short=model_short,
+        task=task,
+        slurm_logs_prefix=SLURM_LOGS_PREFIX,
+        discover_python_relpath=DISCOVER_PYTHON_RELPATH,
+        cache_file_relpath=CACHE_FILE_RELPATH,
+        slurm_max_time=cluster.discovery_slurm_max_time,
+        slurm_partition=cluster.slurm_partition,
+        slurm_account=cluster.slurm_account,
+        slurm_cpus_per_gpu=cluster.slurm_cpus_per_gpu,
+        slurm_mail_user=cluster.slurm_mail_user,
+        work_dir=cluster.work_dir,
+        modules=list(cluster.modules),
+    )
 
 
-def generate_script(model: str, task: str, cached_batch_size: int | str | None) -> str:
+def generate_script(
+    model: str,
+    task: str,
+    cached_batch_size: int | str | None,
+    cluster: ClusterConfig,
+) -> str:
     """Generate the full script content for a model-task combination."""
 
-    model_names_section = generate_model_names_section(model)
-    tasks_section = generate_tasks_section(task)
-
-    socket_exports = _multi_node_socket_exports_bash()
-    debug_timeout = _multi_node_debug_timeout_bash()
-
-    # Multi-node specific logic: only included in generated scripts when
-    # NUM_NODES > 1 to keep single-node scripts minimal.
-    if NUM_NODES > 1:
-        multi_node_logic = f"""
-# 1. Set master (batch script runs on first allocated node)
-MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-export MASTER_ADDR="${{MASTER_ADDR}}"
-# Prefer IPv4 from NSS (avoids IPv6 / ambiguous nslookup Address lines for Gloo TCP rendezvous).
-MASTER_IP=$(getent ahostsv4 "$MASTER_ADDR" | awk '/^[0-9]/ {{print $1; exit}}')
-if [ -z "$MASTER_IP" ]; then
-    MASTER_IP=$(nslookup "$MASTER_ADDR" | awk '/^Address: / {{ print $2 }}' | tail -n 1)
-fi
-export MASTER_IP
-export MASTER_PORT=$((29500 + SLURM_JOB_ID % 2000))
-
-if [ -z "$MASTER_ADDR" ]; then
-    echo "ERROR: Could not find MASTER_ADDR."
-    exit 1
-fi
-
-# 2. High-performance tuning for NCCL on multi-rail IB
-export NCCL_IB_HCA=mlx5
-export NCCL_IB_RETRY_CNT=7
-export NCCL_IB_TIMEOUT=120
-export NCCL_DEBUG=INFO
-export CUDA_DEVICE_MAX_CONNECTIONS=1
-export OMP_NUM_THREADS=1
-
-# Gloo/TCP (elastic rendezvous) may need GLOO_SOCKET_IFNAME; NCCL_* affects GPU collectives after rendezvous.
-{socket_exports}
-# 3. Calculate world size
-export NUM_NODES=$SLURM_NNODES
-export GPUS_PER_NODE={GPUS_PER_NODE}
-export WORLD_SIZE=$(($NUM_NODES * $GPUS_PER_NODE))
-
-echo "Master Node: $MASTER_ADDR"
-echo "Master IP: $MASTER_IP"
-echo "Master Port: $MASTER_PORT"
-echo "NCCL_SOCKET_IFNAME=${{NCCL_SOCKET_IFNAME:-}}  GLOO_SOCKET_IFNAME=${{GLOO_SOCKET_IFNAME:-}}"
-
-# Rendezvous: if c10d logs still show hostname, ensure workers reach $MASTER_IP:$MASTER_PORT; set ifnames per site docs.
-{debug_timeout}"""
-        # Match alignment-handbook jupiter_sft.slurm.j2: LAUNCHER + CMD, then
-        # srun ... bash -c so each node runs one shell that expands $SLURM_PROCID locally.
-        if cached_batch_size is None:
-            cached_batch_size = "auto"
-
-        run_eval_inner = rf"""        export LAUNCHER="accelerate launch \
-    --num_machines $NUM_NODES \
-    --num_processes $WORLD_SIZE \
-    --main_process_ip $MASTER_IP \
-    --main_process_port $MASTER_PORT \
-    --machine_rank \$SLURM_PROCID \
-    --same_network \
-    --max_restarts 0 \
-    --role \$(hostname -s): \
-    --multi_gpu -m eval.eval"
-        export CMD="--model hf --tasks \"$TASK\" --model_args \"trust_remote_code=True,pretrained=$MODEL\" --batch_size {cached_batch_size} --output_path logs"
-        srun --ntasks=$NUM_NODES --export=ALL --wait=60 --kill-on-bad-exit=1 bash -c "$LAUNCHER $CMD"
-"""
-    else:
-        multi_node_logic = ""
-        if cached_batch_size is None:
-            cached_batch_size = "auto"
-
-        run_eval_inner = f"""        srun --ntasks=1 --export=ALL --wait=60 --kill-on-bad-exit=1 accelerate launch --num-processes "$GPUS_PER_NODE" --num-machines 1 \\
-            --multi-gpu -m eval.eval \\
-            --model hf \\
-        --tasks "$TASK" \\
-        --model_args "trust_remote_code=True,pretrained=$MODEL" \\
-        --batch_size {cached_batch_size} \\
-        --output_path logs
-"""
-
-    # Create a safe name for the job
     model_short = model.replace("/", "_").replace(" ", "_")
     job_name = f"eval_{model_short}_{task}"
 
-    script = f"""#!/bin/bash
-#SBATCH --job-name={job_name}
-#SBATCH --output=slurm_logs/mv_exp/{model_short}/{task}_%j.%x.%N.out
-#SBATCH --error=slurm_logs/mv_exp/{model_short}/{task}_%j.%x.%N.err
-#SBATCH --time=00-12:00:00
-#SBATCH --partition=booster
-#SBATCH --account=reformo
-#SBATCH --nodes={NUM_NODES}
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-gpu=18
-#SBATCH --gres=gpu:{GPUS_PER_NODE}
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=alielganzory@hotmail.com
+    if cached_batch_size is None:
+        cached_batch_size = "auto"
 
-# Resource configuration (can be tweaked per-script if needed)
-NUM_NODES={NUM_NODES}
-GPUS_PER_NODE={GPUS_PER_NODE}
-
-{multi_node_logic}
-
-export WORK_DIR=/e/project1/reformo/ali
-export EVALCHEMY_DIR=$WORK_DIR/evalchemy
-export TMPDIR=$WORK_DIR/.tmp
-export TMP=$TMPDIR
-
-# Force Transformers and Hub into offline mode
-export TRANSFORMERS_OFFLINE=1
-export HF_HUB_OFFLINE=1
-
-# If you are using Hugging Face Datasets as well
-export HF_DATASETS_OFFLINE=1
-
-export WANDB_MODE="offline"
-
-# 1. Evaluation arguments
-{model_names_section}
-{tasks_section}
-
-# 2. Go to evalchemy directory
-cd $EVALCHEMY_DIR
-
-# 3. Activate the environment
-module load Stages/2025
-module load CUDA/12
-source .venv/bin/activate
-
-export SRUN_CPUS_PER_TASK={18 * GPUS_PER_NODE}
-
-# 4. Run evaluation
-for MODEL in "${{MODEL_NAMES[@]}}"; do
-    for TASK in "${{TASKS[@]}}"; do
-        echo "==========================================================="
-        echo "Starting evaluation"
-        echo "Model: $MODEL"
-        echo "Task: $TASK"
-        echo "==========================================================="
-{run_eval_inner}    done
-done
-"""
-    return script
+    template = _get_jinja_env().get_template(EVAL_TEMPLATE_NAME)
+    return template.render(
+        job_name=job_name,
+        model=model,
+        model_short=model_short,
+        task=task,
+        num_nodes=cluster.num_nodes,
+        gpus_per_node=cluster.gpus_per_node,
+        srun_cpus_per_task=cluster.slurm_cpus_per_gpu * cluster.gpus_per_node,
+        cached_batch_size=cached_batch_size,
+        socket_exports=_multi_node_socket_exports_bash(cluster),
+        debug_timeout_block=_multi_node_debug_timeout_bash(cluster),
+        slurm_logs_prefix=SLURM_LOGS_PREFIX,
+        slurm_max_time=cluster.eval_slurm_max_time,
+        slurm_partition=cluster.slurm_partition,
+        slurm_account=cluster.slurm_account,
+        slurm_cpus_per_gpu=cluster.slurm_cpus_per_gpu,
+        slurm_mail_user=cluster.slurm_mail_user,
+        work_dir=cluster.work_dir,
+        modules=list(cluster.modules),
+    )
 
 
 def get_safe_filename(model: str, task: str) -> str:
     """Generate a safe filename for the script."""
-    # Replace any problematic characters
     model = model.replace("/", "_").replace(" ", "_")
     return f"eval_{model}_{task}.sh"
 
@@ -501,6 +431,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--cluster",
+        choices=SUPPORTED_CLUSTERS,
+        default="jupiter",
+        help="Cluster name; selects which <cluster>.env file to load (default: jupiter).",
+    )
+    parser.add_argument(
         "--no-download-models",
         action="store_true",
         help="Skip tokenizer and AutoModelForCausalLM cache warming; only write eval_scripts.",
@@ -538,6 +474,8 @@ def remove_finished_scripts(eval_scripts_dir: Path, results_dir: Path):
 
 def get_finished_scripts(results_dir: Path) -> set[str]:
     finished_scripts: set[str] = set()
+    if not results_dir.exists():
+        return finished_scripts
     for d in os.scandir(results_dir):
         tasks: list[str] = []
         for f in os.scandir(d):
@@ -561,10 +499,12 @@ def get_finished_scripts(results_dir: Path) -> set[str]:
 def main():
     args = parse_args()
 
+    cluster_config = ClusterConfig.from_env(args.cluster)
+    print(f"Cluster: {cluster_config.cluster}")
+
     if not args.no_download_models:
         cache_models_with_transformers(MODELS)
 
-    # Get the directory where this script is located
     script_dir = Path(__file__).parent
     batch_size_cache_path = get_batch_size_cache_path(script_dir)
     batch_size_cache = load_batch_size_cache(batch_size_cache_path)
@@ -572,8 +512,7 @@ def main():
     if batch_size_cache_path.stat().st_size == 0:
         batch_size_cache_path.write_text("{}\n")
 
-    # Create the eval_scripts folder
-    eval_scripts_dir = script_dir / "eval_scripts"
+    eval_scripts_dir = script_dir / EVAL_SCRIPTS_DIRNAME
     eval_scripts_dir.mkdir(exist_ok=True)
     discovery_scripts_dir = script_dir / DISCOVERY_SCRIPTS_DIRNAME
     discovery_scripts_dir.mkdir(exist_ok=True)
@@ -606,7 +545,9 @@ def main():
             )
 
             if should_generate_eval:
-                script_content = generate_script(model, task, cached_batch_size)
+                script_content = generate_script(
+                    model, task, cached_batch_size, cluster_config
+                )
                 with open(filepath, "w") as f:
                     f.write(script_content)
                 os.chmod(filepath, 0o755)
@@ -619,7 +560,9 @@ def main():
             )
 
             if should_generate_discovery:
-                discovery_script_content = generate_discovery_script(model, task)
+                discovery_script_content = generate_discovery_script(
+                    model, task, cluster_config
+                )
                 with open(discovery_filepath, "w") as f:
                     f.write(discovery_script_content)
                 os.chmod(discovery_filepath, 0o755)

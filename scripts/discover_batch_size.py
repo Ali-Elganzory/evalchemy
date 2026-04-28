@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Discover and cache HF batch sizes for mv_exp eval jobs.
+Discover and cache HF batch sizes for evalchemy eval jobs.
 """
 
 import argparse

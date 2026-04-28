@@ -1,0 +1,54 @@
+#!/bin/bash
+#SBATCH --job-name={{ job_name }}
+#SBATCH --output={{ slurm_logs_prefix }}/{{ model_short }}/{{ task }}_discover_bs_%j.%x.%N.out
+#SBATCH --error={{ slurm_logs_prefix }}/{{ model_short }}/{{ task }}_discover_bs_%j.%x.%N.err
+#SBATCH --time={{ slurm_max_time }}
+#SBATCH --partition={{ slurm_partition }}
+#SBATCH --account={{ slurm_account }}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-gpu={{ slurm_cpus_per_gpu }}
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user={{ slurm_mail_user }}
+
+export WORK_DIR={{ work_dir }}
+export EVALCHEMY_DIR=$WORK_DIR/evalchemy
+export TMPDIR=$WORK_DIR/.tmp
+export TMP=$TMPDIR
+
+export TRANSFORMERS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export WANDB_MODE="offline"
+
+MODEL_NAMES=(
+    "{{ model }}"
+)
+TASKS=(
+    "{{ task }}"
+)
+
+cd $EVALCHEMY_DIR
+
+{% for mod in slurm_modules -%}
+module load {{ mod }}
+{% endfor -%}
+source .venv/bin/activate
+
+export SRUN_CPUS_PER_TASK={{ slurm_cpus_per_gpu }}
+
+for MODEL in "${MODEL_NAMES[@]}"; do
+    for TASK in "${TASKS[@]}"; do
+        echo "==========================================================="
+        echo "Starting batch-size discovery"
+        echo "Model: $MODEL"
+        echo "Task: $TASK"
+        echo "==========================================================="
+        srun --ntasks=1 --export=ALL --wait=60 --kill-on-bad-exit=1 python {{ discover_python_relpath }} \
+            --model "$MODEL" \
+            --task "$TASK" \
+            --cache-file "$EVALCHEMY_DIR/{{ cache_file_relpath }}" \
+            --output-path logs
+    done
+done
