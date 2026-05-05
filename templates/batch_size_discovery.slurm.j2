@@ -4,10 +4,11 @@
 #SBATCH --error={{ slurm_logs_prefix }}/{{ model_short }}/{{ task }}_discover_bs_%j.%x.%N.err
 #SBATCH --time={{ slurm_max_time }}
 #SBATCH --partition={{ slurm_partition }}
+#SBATCH --qos={{ slurm_qos }}
 #SBATCH --account={{ slurm_account }}
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-gpu={{ slurm_cpus_per_gpu }}
+#SBATCH --cpus-per-task={{ slurm_cpus_per_gpu }}
 #SBATCH --gres=gpu:1
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user={{ slurm_mail_user }}
@@ -31,7 +32,7 @@ TASKS=(
 
 cd $EVALCHEMY_DIR
 
-{% for mod in slurm_modules -%}
+{% for mod in modules -%}
 module load {{ mod }}
 {% endfor -%}
 source .venv/bin/activate

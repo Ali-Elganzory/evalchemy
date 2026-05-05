@@ -4,10 +4,11 @@
 #SBATCH --error={{ slurm_logs_prefix }}/{{ model_short }}/{{ task }}_%j.%x.%N.err
 #SBATCH --time={{ slurm_max_time }}
 #SBATCH --partition={{ slurm_partition }}
+#SBATCH --qos={{ slurm_qos }}
 #SBATCH --account={{ slurm_account }}
 #SBATCH --nodes={{ num_nodes }}
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-gpu={{ slurm_cpus_per_gpu }}
+#SBATCH --cpus-per-task={{ srun_cpus_per_task }}
 #SBATCH --gres=gpu:{{ gpus_per_node }}
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user={{ slurm_mail_user }}
@@ -15,7 +16,7 @@
 # Resource configuration (can be tweaked per-script if needed)
 NUM_NODES={{ num_nodes }}
 GPUS_PER_NODE={{ gpus_per_node }}
-{% if num_nodes > 1 %}
+{% if num_nodes * gpus_per_node > 1 %}
 
 # 1. Set master (batch script runs on first allocated node)
 MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
@@ -82,7 +83,7 @@ TASKS=(
 cd $EVALCHEMY_DIR
 
 # 3. Activate the environment
-{% for mod in slurm_modules -%}
+{% for mod in modules -%}
 module load {{ mod }}
 {% endfor -%}
 source .venv/bin/activate
@@ -97,7 +98,7 @@ for MODEL in "${MODEL_NAMES[@]}"; do
         echo "Model: $MODEL"
         echo "Task: $TASK"
         echo "==========================================================="
-{% if num_nodes > 1 %}
+{% if num_nodes * gpus_per_node > 1 %}
         export LAUNCHER="accelerate launch \
     --num_machines $NUM_NODES \
     --num_processes $WORLD_SIZE \
@@ -111,13 +112,13 @@ for MODEL in "${MODEL_NAMES[@]}"; do
         export CMD="--model hf --tasks \"$TASK\" --model_args \"trust_remote_code=True,pretrained=$MODEL\" --batch_size {{ cached_batch_size }} --output_path logs"
         srun --ntasks=$NUM_NODES --export=ALL --wait=60 --kill-on-bad-exit=1 bash -c "$LAUNCHER $CMD"
 {% else %}
-        srun --ntasks=1 --export=ALL --wait=60 --kill-on-bad-exit=1 accelerate launch --num-processes "$GPUS_PER_NODE" --num-machines 1 \
-            --multi-gpu -m eval.eval \
+        srun --ntasks=1 --export=ALL --wait=60 --kill-on-bad-exit=1 \
+        python -m eval.eval \
             --model hf \
-        --tasks "$TASK" \
-        --model_args "trust_remote_code=True,pretrained=$MODEL" \
-        --batch_size {{ cached_batch_size }} \
-        --output_path logs
+            --tasks "$TASK" \
+            --model_args "trust_remote_code=True,pretrained=$MODEL" \
+            --batch_size {{ cached_batch_size }} \
+            --output_path logs
 {% endif %}
     done
 done

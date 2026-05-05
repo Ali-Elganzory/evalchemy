@@ -18,8 +18,8 @@ def collect_scores() -> pd.DataFrame:
         for d in os.scandir("logs")
         for f in os.scandir(d)
         if f.is_file()
-        if open(f.path).read().strip() != ""
-        and list(json.load(open(f.path))["results"].values())[0] != {}
+        if (content := open(f.path).read().strip()) != ""
+        and list(json.loads(content)["results"].values())[0] != {}
     ]
 
     # Metadata fields to exclude (not actual scores)
@@ -40,6 +40,10 @@ def collect_scores() -> pd.DataFrame:
         "accuracy_hard_std_err",
         "raw_metrics",
         "num_solved",
+        "alias",
+        "exact_match,strict-match",
+        "exact_match_stderr,strict-match",
+        "exact_match_stderr,flexible-extract",
     }
 
     rows = []
@@ -80,6 +84,7 @@ BENCHMARKS_MAPPING = {
     "A25": "AIME25",
     "AMC": "AMC23",
     "M500": "MATH500",
+    "GSM8K": "gsm8k",
     "HE": "HumanEval",
     "LCB": "LiveCodeBench",
     "MBPP": "MBPP",
@@ -110,7 +115,11 @@ def model(section: str, display_name: str, hf_id: str) -> ModelRow:
 
 
 MODEL_REGISTRY = [
-    model("Main", "OpenSci-NM", "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096"),
+    model(
+        "Main",
+        "OpenSci-NM",
+        "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096",
+    ),
     model(
         "Main",
         "OpenSci-NM + SFT",
@@ -284,7 +293,9 @@ MODEL_REGISTRY = [
         "MV + DPO",
         "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-DPO-Tulu3-decontaminated",
     ),
-    model("Main", "MV-16k", "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k"),
+    model(
+        "Main", "MV-16k", "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k"
+    ),
     model(
         "Main",
         "MV-16k + SFT",
@@ -295,7 +306,9 @@ MODEL_REGISTRY = [
         "MV-16k + DPO",
         "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-DPO-Tulu3-decontaminated",
     ),
-    model("Ablation", "MV-woinstruct", "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT"),
+    model(
+        "Ablation", "MV-woinstruct", "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT"
+    ),
     model(
         "Ablation",
         "MV-woinstruct + SFT",
@@ -321,7 +334,9 @@ MODEL_REGISTRY = [
         "MV-woinstruct-16k + DPO",
         "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-longsft_16k-DPO-Tulu3-decontaminated",
     ),
-    model("Ablation", "MV-woweb", "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT"),
+    model(
+        "Ablation", "MV-woweb", "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT"
+    ),
     model(
         "Ablation",
         "MV-woweb + SFT",
@@ -447,7 +462,11 @@ MODEL_REGISTRY = [
         "MV-16k + DPO",
         "ali-elganzory/0.4b-mixturevitae-v1-decontaminated-300B-4096-longsft_16k-DPO-Tulu3-decontaminated",
     ),
-    model("Merged", "4+16k", "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-merged"),
+    model(
+        "Merged",
+        "4+16k",
+        "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-merged",
+    ),
     model(
         "Merged",
         "4+16k + SFT",
@@ -457,6 +476,81 @@ MODEL_REGISTRY = [
         "Merged",
         "4+16k + DPO",
         "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-merged-DPO-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "MV-16k + SFT + OT30K",
+        "open-sci/sft__ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k-SFT-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "MV-16k + DPO + OT30K",
+        "open-sci/sft__ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k-DPO-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "MV-16k + OT30K",
+        "open-sci/sft__ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k",
+    ),
+    model(
+        "OT30K",
+        "MV-16k (base) + OT30K",
+        "open-sci/sft_ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k_base",
+    ),
+    model(
+        "OT30K",
+        "Comma0.1-16k + SFT + OT30K",
+        "open-sci/sft__ot30k_1.7b-Comma0.1-300BT-longsft_16k-SFT-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "Comma0.1-16k + DPO + OT30K",
+        "open-sci/sft__ot30k_1.7b-Comma0.1-300BT-longsft_16k-DPO-Tulu3-decontaminate",
+    ),
+    model(
+        "OT30K",
+        "FineWeb-Edu-16k + SFT + OT30K",
+        "open-sci/sft__ot30k_open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-longsft_16k-SFT-Tulu3",
+    ),
+    model(
+        "OT30K",
+        "OpenSci-NM-16k + SFT + OT30K",
+        "open-sci/sft__ot30k_open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-SFT-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "OpenSci-NM-16k + DPO + OT30K",
+        "open-sci/sft__ot30k_open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-DPO-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "Qwen2.5 + SFT + OT30K",
+        "open-sci/sft__ot30k_Qwen2.5-1.5B-SFT-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "Qwen2.5 + DPO + OT30K",
+        "open-sci/sft__ot30k_Qwen2.5-1.5B-DPO-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "Qwen3 + SFT + OT30K",
+        "open-sci/sft__ot30k_Qwen3-1.7B-Base-SFT-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "Qwen3 + DPO + OT30K",
+        "open-sci/sft__ot30k_Qwen3-1.7B-Base-DPO-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "SmolLM2-16k + SFT + OT30K",
+        "open-sci/sft__ot30k_SmolLM2-1.7B-16k-SFT-Tulu3-decontaminated",
+    ),
+    model(
+        "OT30K",
+        "SmolLM2-Instruct-16k + OT30K",
+        "open-sci/sft__ot30k_SmolLM2-1.7B-Instruct-16k",
     ),
 ]
 
@@ -696,6 +790,51 @@ TABLE4_GROUP_SPECS = [
     ),
 ]
 
+TABLE5_GROUP_SPECS = [
+    (
+        "MV-16k",
+        [
+            model_ref("Main", "MV-16k + SFT"),
+            model_ref("OT30K", "MV-16k + SFT + OT30K"),
+        ],
+    ),
+    (
+        "FineWeb-Edu-16k",
+        [
+            model_ref("Main", "FineWeb-Edu-16k + SFT"),
+            model_ref("OT30K", "FineWeb-Edu-16k + SFT + OT30K"),
+        ],
+    ),
+    (
+        "Comma0.1-16k",
+        [
+            model_ref("Main", "Comma0.1-16k + SFT"),
+            model_ref("OT30K", "Comma0.1-16k + SFT + OT30K"),
+        ],
+    ),
+    (
+        "SmolLM2-16k",
+        [
+            model_ref("Main", "SmolLM2-16k + SFT"),
+            model_ref("OT30K", "SmolLM2-16k + SFT + OT30K"),
+        ],
+    ),
+    (
+        "Qwen2.5",
+        [
+            model_ref("Main", "Qwen2.5 + SFT"),
+            model_ref("OT30K", "Qwen2.5 + SFT + OT30K"),
+        ],
+    ),
+    (
+        "Qwen3",
+        [
+            model_ref("Main", "Qwen3 + SFT"),
+            model_ref("OT30K", "Qwen3 + SFT + OT30K"),
+        ],
+    ),
+]
+
 FIXED_TABLE_SPECS = [
     (
         "Ablation on MixtureVitae mixture composition on reasoning benchmarks.",
@@ -719,6 +858,12 @@ FIXED_TABLE_SPECS = [
         "Performance of 0.4B scale models on reasoning benchmarks.",
         "tab:evalchemy_table4",
         TABLE4_GROUP_SPECS,
+        False,
+    ),
+    (
+        "OpenThoughts3 reasoning post-training (30K samples) applied to SFT checkpoints at 1.7B scale. The + SFT rows are the SFT checkpoints used to initialize the OT30K runs; the + OT30K rows are the resulting models after reasoning post-training.",
+        "tab:evalchemy_ot30k",
+        TABLE5_GROUP_SPECS,
         False,
     ),
 ]
@@ -780,8 +925,19 @@ def resolve_group_models(group_specs):
     return resolved_groups
 
 
+def render_incremental_name(base: str, model_name: str) -> str:
+    if model_name == base or not model_name.startswith(base):
+        return model_name
+    suffix = model_name[len(base):].lstrip()
+    if suffix == "+ DPO":
+        suffix = "+ SFT + DPO"
+    return r"\quad " + suffix
+
+
 def build_table_latex(caption, label, groups, get_scores_dict, is_multirow=False):
-    max_scores = {benchmark: -float("inf") for benchmark in BENCHMARKS_FULL_NAMES + ["Avg"]}
+    max_scores = {
+        benchmark: -float("inf") for benchmark in BENCHMARKS_FULL_NAMES + ["Avg"]
+    }
     table_data = []
 
     for group_name, models in groups:
@@ -795,6 +951,12 @@ def build_table_latex(caption, label, groups, get_scores_dict, is_multirow=False
                     max_scores[benchmark] = max(max_scores[benchmark], value)
             table_data.append((group_name, model_name, row_scores))
 
+    benchmark_abbrevs = list(BENCHMARKS_MAPPING.keys())
+    num_score_cols = len(benchmark_abbrevs) + 1
+    header_cells = [f"\\textbf{{{abbrev}}}" for abbrev in benchmark_abbrevs] + [
+        r"\textbf{Avg}"
+    ]
+
     latex = [
         r"\begin{table}[ht]",
         r"\centering",
@@ -804,25 +966,26 @@ def build_table_latex(caption, label, groups, get_scores_dict, is_multirow=False
     ]
 
     if is_multirow:
-        latex.extend(
-            [
-                r"\begin{tabular}{llccccccccccc}",
-                r"\toprule",
-                r"\textbf{Base} & \textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\",
-            ]
-        )
+        column_spec = "ll" + "c" * num_score_cols
+        header = " & ".join([r"\textbf{Base}", r"\textbf{Model}", *header_cells])
+        cmidrule_end = num_score_cols + 2
     else:
-        latex.extend(
-            [
-                r"\begin{tabular}{lccccccccccc}",
-                r"\toprule",
-                r"\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\",
-            ]
-        )
+        column_spec = "l" + "c" * num_score_cols
+        header = " & ".join([r"\textbf{Model}", *header_cells])
+        cmidrule_end = num_score_cols + 1
+
+    latex.extend(
+        [
+            f"\\begin{{tabular}}{{{column_spec}}}",
+            r"\toprule",
+            f"{header} \\\\",
+        ]
+    )
 
     latex.append(r"\midrule")
 
     current_group = None
+    segment_base = None
     for group_name, model_name, row_scores in table_data:
         if current_group != group_name:
             if current_group is not None:
@@ -830,10 +993,20 @@ def build_table_latex(caption, label, groups, get_scores_dict, is_multirow=False
                 latex.append(r"\addlinespace[0.3em]")
             current_group = group_name
             group_idx = 0
+            segment_base = None
 
         if model_name == DIVIDER:
-            latex.append(r"\cmidrule{2-13}" if is_multirow else r"\midrule")
+            latex.append(
+                f"\\cmidrule{{2-{cmidrule_end}}}" if is_multirow else r"\midrule"
+            )
+            segment_base = None
             continue
+
+        if segment_base is None:
+            segment_base = model_name
+            display_name = model_name
+        else:
+            display_name = render_incremental_name(segment_base, model_name)
 
         formatted_scores = []
         for benchmark in BENCHMARKS_FULL_NAMES + ["Avg"]:
@@ -854,12 +1027,12 @@ def build_table_latex(caption, label, groups, get_scores_dict, is_multirow=False
             )
             if group_idx == 0:
                 latex.append(
-                    f"\\multirow{{{num_models}}}{{*}}{{{group_name}}} & {model_name} & {scores_str} \\\\"
+                    f"\\multirow{{{num_models}}}{{*}}{{{group_name}}} & {display_name} & {scores_str} \\\\"
                 )
             else:
-                latex.append(f" & {model_name} & {scores_str} \\\\")
+                latex.append(f" & {display_name} & {scores_str} \\\\")
         else:
-            latex.append(f"{model_name} & {scores_str} \\\\")
+            latex.append(f"{display_name} & {scores_str} \\\\")
 
         group_idx += 1
 
@@ -947,7 +1120,9 @@ def write_missing_scores_csv(get_score, resolved_groups):
                         }
                     )
 
-    pd.DataFrame(missing_data).drop_duplicates().to_csv("missing_scores.csv", index=False)
+    pd.DataFrame(missing_data).drop_duplicates().to_csv(
+        "missing_scores.csv", index=False
+    )
     print("Missing benchmarks successfully written to missing_scores.csv")
 
 
@@ -955,9 +1130,13 @@ def generate_and_save_latex(
     df: pd.DataFrame, tables_file="tables.tex", appendix_file="appendix.tex"
 ):
     get_score, get_scores_dict = build_score_accessors(df)
-    resolved_groups = [resolve_group_models(specs) for _, _, specs, _ in FIXED_TABLE_SPECS]
+    resolved_groups = [
+        resolve_group_models(specs) for _, _, specs, _ in FIXED_TABLE_SPECS
+    ]
     table_blocks = []
-    for (caption, label, _, is_multirow), groups in zip(FIXED_TABLE_SPECS, resolved_groups):
+    for (caption, label, _, is_multirow), groups in zip(
+        FIXED_TABLE_SPECS, resolved_groups
+    ):
         table_blocks.append(
             build_table_latex(
                 caption,
@@ -1023,9 +1202,7 @@ def select_indices_interactively() -> list[int]:
 
     print_model_registry()
     while True:
-        raw_value = input(
-            "Enter model indices/ranges (for example: 1,3,5-8): "
-        ).strip()
+        raw_value = input("Enter model indices/ranges (for example: 1,3,5-8): ").strip()
         try:
             return parse_model_indices(raw_value, len(MODEL_REGISTRY))
         except ValueError as exc:
@@ -1059,7 +1236,9 @@ def build_output_paths(output: str | None):
 
 
 def build_standalone_document(table_latex: str) -> str:
-    fixed_table_latex = table_latex.replace(r"\begin{table}[ht]", r"\begin{table}[H]", 1)
+    fixed_table_latex = table_latex.replace(
+        r"\begin{table}[ht]", r"\begin{table}[H]", 1
+    )
     return "\n".join(
         [
             r"\documentclass{article}",
@@ -1098,7 +1277,9 @@ def export_table_pdf(table_latex: str, pdf_path: Path):
                 text=True,
             )
         except FileNotFoundError:
-            print("Warning: pdflatex is not available on PATH, so no PDF was generated.")
+            print(
+                "Warning: pdflatex is not available on PATH, so no PDF was generated."
+            )
             return
         except subprocess.CalledProcessError as exc:
             stderr = exc.stderr.strip()

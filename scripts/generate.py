@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import concurrent.futures
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,8 @@ import torch
 from dotenv import dotenv_values
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from tqdm import tqdm
+import ijson
 
 # ---------------------------------------------------------------------------
 # Static (non-cluster) configuration
@@ -36,7 +39,7 @@ TEMPLATES_DIR = SCRIPTS_DIR.parent / "templates"
 DISCOVERY_TEMPLATE_NAME = "batch_size_discovery.slurm.j2"
 EVAL_TEMPLATE_NAME = "benchmark_evaluation.slurm.j2"
 
-SUPPORTED_CLUSTERS = ("jupiter", "leonardo")
+SUPPORTED_CLUSTERS = ("marenostrum", "jupiter", "leonardo")
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +59,7 @@ class ClusterConfig:
     cluster: str
     slurm_account: str
     slurm_partition: str
+    slurm_qos: str
     slurm_mail_user: str
     slurm_cpus_per_gpu: int
     discovery_slurm_max_time: str
@@ -79,6 +83,7 @@ class ClusterConfig:
         required = (
             "SLURM_ACCOUNT",
             "SLURM_PARTITION",
+            "SLURM_QOS",
             "SLURM_MAIL_USER",
             "SLURM_CPUS_PER_GPU",
             "DISCOVERY_SLURM_MAX_TIME",
@@ -91,9 +96,7 @@ class ClusterConfig:
         )
         missing = [k for k in required if k not in raw]
         if missing:
-            raise KeyError(
-                f"Missing required keys in {env_path}: {', '.join(missing)}"
-            )
+            raise KeyError(f"Missing required keys in {env_path}: {', '.join(missing)}")
 
         modules = tuple(m for m in raw["MODULES"].split() if m)
 
@@ -101,6 +104,7 @@ class ClusterConfig:
             cluster=cluster,
             slurm_account=raw["SLURM_ACCOUNT"],
             slurm_partition=raw["SLURM_PARTITION"],
+            slurm_qos=raw["SLURM_QOS"],
             slurm_mail_user=raw["SLURM_MAIL_USER"],
             slurm_cpus_per_gpu=int(raw["SLURM_CPUS_PER_GPU"]),
             discovery_slurm_max_time=raw["DISCOVERY_SLURM_MAX_TIME"],
@@ -118,11 +122,12 @@ class ClusterConfig:
 
 
 # Define the models (only uncommented/active models are used to generate scripts)
-MODELS = [
+MODELS: list[str | tuple[str, int]] = [
     # ---------------------------------------------------------
     # Base Models
     # ---------------------------------------------------------
     "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096",
+    "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-long_sft_16k",
     "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16384-rope_theta-1M-long_sft_16k",
     "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096",
     "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-4096-longsft_16k",
@@ -152,6 +157,7 @@ MODELS = [
     # SFT Models (100% Finished)
     # ---------------------------------------------------------
     "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-SFT-Tulu3-decontaminated",
+    "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-long_sft_16k-SFT-Tulu3-decontaminated",
     "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-SFT-Tulu3-decontaminated",
     "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-SFT-Tulu3-decontaminated",
     "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-longsft_16k-SFT-Tulu3-decontaminated",
@@ -215,22 +221,36 @@ MODELS = [
     # ---------------------------------------------------------
     # OT3 Models (100% Finished)
     # ---------------------------------------------------------
-    "open-sci/sft_ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k_base",
+    ("open-sci/sft__ot30k_1.7b-Comma0.1-300BT-longsft_16k-DPO-Tulu3-decontaminate", 32768),
+    ("open-sci/sft__ot30k_1.7b-Comma0.1-300BT-longsft_16k-SFT-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k", 32768),
+    ("open-sci/sft__ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k-DPO-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-longsft_16k-SFT-Tulu3", 32768),
+    ("open-sci/sft__ot30k_open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-DPO-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-SFT-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_Qwen2.5-1.5B-DPO-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_Qwen2.5-1.5B-SFT-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_Qwen3-1.7B-Base-DPO-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_Qwen3-1.7B-Base-SFT-Tulu3-decontaminated", 32768),
+    ("open-sci/sft__ot30k_SmolLM2-1.7B-16k-SFT-Tulu3-decontaminated", 32768),
+    # "open-sci/sft__ot30k_SmolLM2-1.7B-Instruct-16k",
+    ("open-sci/sft__ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k-SFT-Tulu3-decontaminated", 32768),
+    ("open-sci/sft_ot30k_1.7b-MixtureVitae-300BT-v1-decontaminated-16k_base", 32768),
 ]
 
 # Define the tasks
 TASKS = [
-    # "IFEval",
-    # "HumanEval",
-    # "MBPP",
-    # "AIME24",
-    # "AIME25",
-    # "AMC23",
+    "IFEval",
+    "HumanEval",
+    "MBPP",
+    "AIME24",
+    "AIME25",
+    "AMC23",
     "gsm8k",
-    # "MATH500",
-    # "LiveCodeBench",
-    # "GPQADiamond",
-    # "JEEBench",
+    "MATH500",
+    "LiveCodeBench",
+    "GPQADiamond",
+    "JEEBench",
 ]
 
 
@@ -238,9 +258,13 @@ def _multi_node_socket_exports_bash(cluster: ClusterConfig) -> str:
     """Optional export lines for NCCL / Gloo socket interface (empty constants = no lines)."""
     lines: list[str] = []
     if cluster.nccl_socket_ifname.strip():
-        lines.append(f'export NCCL_SOCKET_IFNAME="{cluster.nccl_socket_ifname.strip()}"')
+        lines.append(
+            f'export NCCL_SOCKET_IFNAME="{cluster.nccl_socket_ifname.strip()}"'
+        )
     if cluster.gloo_socket_ifname.strip():
-        lines.append(f'export GLOO_SOCKET_IFNAME="{cluster.gloo_socket_ifname.strip()}"')
+        lines.append(
+            f'export GLOO_SOCKET_IFNAME="{cluster.gloo_socket_ifname.strip()}"'
+        )
     return ("\n".join(lines) + "\n") if lines else ""
 
 
@@ -326,6 +350,7 @@ def generate_discovery_script(model: str, task: str, cluster: ClusterConfig) -> 
         cache_file_relpath=CACHE_FILE_RELPATH,
         slurm_max_time=cluster.discovery_slurm_max_time,
         slurm_partition=cluster.slurm_partition,
+        slurm_qos=cluster.slurm_qos,
         slurm_account=cluster.slurm_account,
         slurm_cpus_per_gpu=cluster.slurm_cpus_per_gpu,
         slurm_mail_user=cluster.slurm_mail_user,
@@ -363,6 +388,7 @@ def generate_script(
         slurm_logs_prefix=SLURM_LOGS_PREFIX,
         slurm_max_time=cluster.eval_slurm_max_time,
         slurm_partition=cluster.slurm_partition,
+        slurm_qos=cluster.slurm_qos,
         slurm_account=cluster.slurm_account,
         slurm_cpus_per_gpu=cluster.slurm_cpus_per_gpu,
         slurm_mail_user=cluster.slurm_mail_user,
@@ -405,7 +431,9 @@ def cache_models_with_transformers(model_ids: list[str]) -> None:
         print(f"[{i:0{num_digits}d}/{n}] Caching: {model_id}")
         try:
             AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=True, device_map="auto"
+            )
         except Exception as e:
             print(
                 f"ERROR: failed to cache {model_id}: {e}\n"
@@ -433,8 +461,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cluster",
         choices=SUPPORTED_CLUSTERS,
-        default="jupiter",
-        help="Cluster name; selects which <cluster>.env file to load (default: jupiter).",
+        default="marenostrum",
+        help="Cluster name; selects which <cluster>.env file to load (default: marenostrum).",
+    )
+    parser.add_argument(
+        "--cache-models",
+        nargs="+",
+        help="Cache models with Transformers.",
+        default=[],
     )
     parser.add_argument(
         "--no-download-models",
@@ -449,51 +483,58 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def remove_finished_scripts(eval_scripts_dir: Path, results_dir: Path):
-    """Remove all finished scripts in the evaluation scripts directory."""
-    all_scripts = [f.name for f in eval_scripts_dir.glob("*.sh")]
-    print(f"All scripts: {len(all_scripts)}")
-    finished_scripts = get_finished_scripts(results_dir)
-    print(f"Finished scripts: {len([f for f in all_scripts if f in finished_scripts])}")
-    running_scripts = subprocess.check_output(
-        ["squeue", "--me", "-h", "-o", "%j"], text=True
-    )
-    running_scripts = [
-        s.strip() + ".sh" for s in running_scripts.split("\n") if s.strip()
-    ]
-    print(f"Running scripts: {len(running_scripts)}")
-    remaining_scripts = [
-        s for s in all_scripts if s not in finished_scripts and s not in running_scripts
-    ]
-    print(f"Remaining scripts: {len(remaining_scripts)}")
-
-    for script in eval_scripts_dir.glob("*.sh"):
-        if script.name not in remaining_scripts:
-            script.unlink()
+def get_first_kv(filename: Path) -> tuple[str, dict] | None:
+    try:
+        with open(filename, "r") as f:
+            parser = ijson.kvitems(f, "")
+            key, value = next(parser)
+            return key, value
+    except Exception as e:
+        return None
 
 
 def get_finished_scripts(results_dir: Path) -> set[str]:
     finished_scripts: set[str] = set()
     if not results_dir.exists():
         return finished_scripts
-    for d in os.scandir(results_dir):
-        tasks: list[str] = []
-        for f in os.scandir(d):
-            if not f.is_file():
+
+    def process_model_dir(d):
+        tasks: set[str] = set()
+        files = list(os.scandir(d))
+        for f in files:
+            kv = get_first_kv(Path(f.path))
+            if kv is None:
                 continue
-            if open(f.path).read().strip() == "":
-                continue
-            result = json.load(open(f.path))
-            for task, metrics in result["results"].items():
+            _, results = kv
+            for task, metrics in results.items():
                 if metrics == {}:
                     continue
-                tasks.append(task)
+                tasks.add(task)
+        model = d.name.replace("__", "/", 1)
+        return [(model, task) for task in tasks]
 
-        model = d.name.replace("__", "/")
-        for task in tasks:
-            finished_scripts.add(get_safe_filename(model, task))
+    all_model_dirs = list(os.scandir(results_dir))
+    finished_list = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        for processed in tqdm(
+            executor.map(process_model_dir, all_model_dirs),
+            desc="Loading finished scripts",
+            total=len(all_model_dirs),
+        ):
+            finished_list.extend(processed)
+
+    for model, task in finished_list:
+        finished_scripts.add(get_safe_filename(model, task))
 
     return finished_scripts
+
+
+def get_running_scripts() -> set[str]:
+    running_scripts = subprocess.check_output(
+        ["squeue", "--me", "-h", "-o", "%j"], text=True
+    )
+    return {s.strip() + ".sh" for s in running_scripts.split("\n") if s.strip()}
 
 
 def main():
@@ -501,6 +542,10 @@ def main():
 
     cluster_config = ClusterConfig.from_env(args.cluster)
     print(f"Cluster: {cluster_config.cluster}")
+
+    if args.cache_models:
+        cache_models_with_transformers(args.cache_models)
+        exit(0)
 
     if not args.no_download_models:
         cache_models_with_transformers(MODELS)
@@ -519,14 +564,19 @@ def main():
 
     print(f"Creating evaluation scripts in: {eval_scripts_dir}")
     print(f"Creating discovery scripts in: {discovery_scripts_dir}")
-    print(f"Models: {len(MODELS)}")
-    print(f"Tasks: {len(TASKS)}")
-    print(f"Total scripts to generate: {len(MODELS) * len(TASKS)}")
+    print(f"Total models: {len(MODELS)}")
+    print(f"Total tasks: {len(TASKS)}")
+    n_scripts = len(MODELS) * len(TASKS)
+    print(f"Total scripts: {n_scripts}")
     print()
 
     remove_scripts(eval_scripts_dir)
     remove_scripts(discovery_scripts_dir)
+
+    running_scripts = get_running_scripts()
     finished_scripts = get_finished_scripts(Path("logs"))
+    all_scripts = []
+    generated_scripts = []
 
     script_count = 0
     discovery_script_count = 0
@@ -535,75 +585,47 @@ def main():
     for model in MODELS:
         for task in TASKS:
             filename = get_safe_filename(model, task)
-            filepath = eval_scripts_dir / filename
-            discovery_filename = f"discover_{filename}"
-            discovery_filepath = discovery_scripts_dir / discovery_filename
+            all_scripts.append(filename)
+
+            if filename in running_scripts:
+                continue
+            if filename in finished_scripts:
+                continue
 
             cached_batch_size = resolve_cached_batch_size(batch_size_cache, model, task)
-            should_generate_eval = not (
-                args.skip_uncached_eval_scripts and cached_batch_size is None
-            )
 
-            if should_generate_eval:
-                script_content = generate_script(
-                    model, task, cached_batch_size, cluster_config
-                )
-                with open(filepath, "w") as f:
-                    f.write(script_content)
-                os.chmod(filepath, 0o755)
-                script_count += 1
-            else:
-                skipped_eval_script_count += 1
-
-            should_generate_discovery = (
-                cached_batch_size is None and filename not in finished_scripts
-            )
-
-            if should_generate_discovery:
+            if cached_batch_size is None:
                 discovery_script_content = generate_discovery_script(
                     model, task, cluster_config
                 )
+                discovery_filepath = discovery_scripts_dir / filename
                 with open(discovery_filepath, "w") as f:
                     f.write(discovery_script_content)
                 os.chmod(discovery_filepath, 0o755)
                 discovery_script_count += 1
 
-            n_scripts = len(MODELS) * len(TASKS)
-            num_digits = len(str(n_scripts))
-            progress = script_count + skipped_eval_script_count
-            if not should_generate_eval and should_generate_discovery:
-                print(
-                    f"[{progress:0{num_digits}d}/{n_scripts}] Skipped: {filename} (missing cached batch size); generated {discovery_filename}"
-                )
-            elif not should_generate_eval:
-                print(
-                    f"[{progress:0{num_digits}d}/{n_scripts}] Skipped: {filename} (missing cached batch size; no discovery script needed)"
-                )
-            elif should_generate_discovery:
-                print(
-                    f"[{progress:0{num_digits}d}/{n_scripts}] Generated: {filename} and {discovery_filename}"
-                )
-            elif cached_batch_size is None and filename in finished_scripts:
-                print(
-                    f"[{progress:0{num_digits}d}/{n_scripts}] Generated: {filename} (finished eval; skipped {discovery_filename})"
-                )
-            else:
-                print(
-                    f"[{progress:0{num_digits}d}/{n_scripts}] Generated: {filename} (cached batch size; skipped {discovery_filename})"
-                )
+            if args.skip_uncached_eval_scripts and cached_batch_size is None:
+                skipped_eval_script_count += 1
+                continue
+
+            script_content = generate_script(
+                model, task, cached_batch_size, cluster_config
+            )
+            filepath = eval_scripts_dir / filename
+            with open(filepath, "w") as f:
+                f.write(script_content)
+            os.chmod(filepath, 0o755)
+            generated_scripts.append(filename)
+            script_count += 1
+
+    running_scripts = [s for s in running_scripts if s in all_scripts]
+    finished_scripts = [s for s in finished_scripts if s in all_scripts]
 
     print()
-    print(
-        f"Successfully generated {script_count} evaluation scripts in {eval_scripts_dir}"
-    )
-    print(
-        f"Successfully generated {discovery_script_count} discovery scripts in {discovery_scripts_dir}"
-    )
-    print(
-        f"Skipped {skipped_eval_script_count} evaluation scripts without cached batch sizes"
-    )
-
-    remove_finished_scripts(eval_scripts_dir, Path("logs"))
+    print(f"Finished scripts: {len(finished_scripts)}")
+    print(f"Running scripts: {len(running_scripts)}")
+    print(f"Skipped scripts: {skipped_eval_script_count}")
+    print(f"Generated scripts (remaining evaluations): {script_count}")
 
 
 if __name__ == "__main__":

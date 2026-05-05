@@ -3,38 +3,38 @@
 \caption{Ablation on MixtureVitae mixture composition on reasoning benchmarks.}
 \label{tab:evalchemy_table1}
 \scriptsize
-\begin{tabular}{lccccccccccc}
+\begin{tabular}{lcccccccccccc}
 \toprule
-\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
+\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{GSM8K} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
 \midrule
-MV-woinstruct & 0.0 & 0.0 & 0.0 & 0.4 & 0.6 & 0.0 & 14.2 & 23.9 & 0.0 & 24.8 & 6.4 \\
-MV-woinstruct + SFT & 0.0 & 0.0 & 2.5 & 1.8 & 7.3 & 1.0 & 15.8 & 20.7 & 3.4 & 29.9 & 8.2 \\
-MV-woinstruct + DPO & 0.0 & 0.0 & 2.5 & 2.0 & 7.0 & 1.4 & 15.2 & 25.1 & 4.0 & 32.0 & 8.9 \\
-\midrule
-\addlinespace[0.3em]
-MV-woinstruct-16k & 0.0 & 0.0 & 2.5 & 1.6 & 1.5 & 0.0 & 2.0 & 24.6 & 4.7 & 32.9 & 7.0 \\
-MV-woinstruct-16k + SFT & 0.0 & 0.0 & 0.0 & 2.2 & 3.4 & 0.4 & 3.4 & \textbf{25.6} & 2.1 & 35.2 & 7.2 \\
-MV-woinstruct-16k + DPO & 0.0 & 0.0 & 2.5 & 2.6 & 4.9 & 0.6 & 4.8 & 23.7 & 2.2 & 36.0 & 7.7 \\
+MV-woinstruct & 0.0 & 0.0 & 0.0 & 0.4 & 2.6 & 0.6 & 0.0 & 14.2 & 23.9 & 0.0 & 24.8 & 6.1 \\
+\quad + SFT & 0.0 & 0.0 & 2.5 & 1.8 & 4.2 & 7.3 & 1.0 & 15.8 & 20.7 & 3.4 & 29.9 & 7.9 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 2.0 & 3.8 & 7.0 & 1.4 & 15.2 & 25.1 & 4.0 & 32.0 & 8.5 \\
 \midrule
 \addlinespace[0.3em]
-MV-woweb & 0.0 & 0.0 & 17.5 & 26.4 & 23.5 & \textbf{7.4} & 34.6 & 23.7 & 2.6 & 26.5 & \textbf{16.2} \\
-MV-woweb + SFT & 0.0 & 0.0 & 7.5 & 10.0 & 23.6 & 2.4 & 36.8 & 22.4 & 3.7 & 35.0 & 14.1 \\
-MV-woweb + DPO & 0.0 & \textbf{3.3} & 10.0 & 12.2 & \textbf{25.1} & 1.8 & \textbf{38.0} & 25.2 & 4.3 & 36.2 & 15.6 \\
+MV-woinstruct-16k & 0.0 & 0.0 & 2.5 & 1.6 & 4.2 & 1.5 & 0.0 & 2.0 & 24.6 & 4.7 & 32.9 & 6.7 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 2.2 & 4.8 & 3.4 & 0.4 & 3.4 & \textbf{25.6} & 2.1 & 35.2 & 7.0 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 2.6 & 5.2 & 4.9 & 0.6 & 4.8 & 23.7 & 2.2 & 36.0 & 7.5 \\
 \midrule
 \addlinespace[0.3em]
-MV-woweb-16k & 0.0 & 0.0 & 10.0 & 35.0 & 10.7 & 3.5 & 9.0 & 23.9 & 4.4 & 37.4 & 13.4 \\
-MV-woweb-16k + SFT & 0.0 & 0.0 & 7.5 & 18.2 & 9.5 & 3.5 & 7.2 & 22.1 & 4.3 & 38.2 & 11.1 \\
-MV-woweb-16k + DPO & \textbf{3.3} & \textbf{3.3} & \textbf{20.0} & 21.2 & 11.0 & 3.3 & 7.8 & 21.0 & 2.9 & 38.3 & 13.2 \\
+MV-woweb & 0.0 & 0.0 & 17.5 & 26.4 & 42.4 & 23.5 & \textbf{7.4} & 34.6 & 23.7 & 2.6 & 26.5 & \textbf{18.6} \\
+\quad + SFT & 0.0 & 0.0 & 7.5 & 10.0 & 36.0 & 23.6 & 2.4 & 36.8 & 22.4 & 3.7 & 35.0 & 16.1 \\
+\quad + SFT + DPO & 0.0 & \textbf{3.3} & 10.0 & 12.2 & 36.5 & \textbf{25.1} & 1.8 & \textbf{38.0} & 25.2 & 4.3 & 36.2 & 17.5 \\
 \midrule
 \addlinespace[0.3em]
-MV & \textbf{3.3} & 0.0 & 0.0 & 12.2 & 0.6 & 0.0 & 0.2 & 24.4 & 3.2 & 21.2 & 6.5 \\
-MV + SFT & 0.0 & 0.0 & 5.0 & 6.6 & 22.3 & 3.3 & 36.8 & 20.7 & 2.5 & 34.9 & 13.2 \\
-MV + DPO & 0.0 & 0.0 & 5.0 & 8.0 & 22.6 & 4.3 & 36.4 & 24.4 & 2.9 & 35.1 & 13.9 \\
+MV-woweb-16k & 0.0 & 0.0 & 10.0 & 35.0 & \textbf{44.7} & 10.7 & 3.5 & 9.0 & 23.9 & 4.4 & 37.4 & 16.2 \\
+\quad + SFT & 0.0 & 0.0 & 7.5 & 18.2 & 33.6 & 9.5 & 3.5 & 7.2 & 22.1 & 4.3 & 38.2 & 13.1 \\
+\quad + SFT + DPO & \textbf{3.3} & \textbf{3.3} & \textbf{20.0} & 21.2 & 35.0 & 11.0 & 3.3 & 7.8 & 21.0 & 2.9 & 38.3 & 15.2 \\
 \midrule
 \addlinespace[0.3em]
-MV-16k & 0.0 & 0.0 & 17.5 & \textbf{35.2} & 2.5 & 3.7 & 7.2 & 22.4 & \textbf{7.2} & 40.4 & 13.6 \\
-MV-16k + SFT & 0.0 & 0.0 & 0.0 & 3.2 & 11.6 & 0.6 & 6.4 & 23.9 & 4.4 & 39.5 & 9.0 \\
-MV-16k + DPO & 0.0 & 0.0 & 0.0 & 3.4 & 0.9 & 0.8 & 8.2 & 24.6 & 4.0 & \textbf{41.6} & 8.3 \\
+MV & \textbf{3.3} & 0.0 & 0.0 & 12.2 & 42.1 & 0.6 & 0.0 & 0.2 & 24.4 & 3.2 & 21.2 & 9.8 \\
+\quad + SFT & 0.0 & 0.0 & 5.0 & 6.6 & 38.4 & 22.3 & 3.3 & 36.8 & 20.7 & 2.5 & 34.9 & 15.5 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 5.0 & 8.0 & 39.2 & 22.6 & 4.3 & 36.4 & 24.4 & 2.9 & 35.1 & 16.2 \\
+\midrule
+\addlinespace[0.3em]
+MV-16k & 0.0 & 0.0 & 17.5 & \textbf{35.2} & 40.6 & 2.5 & 3.7 & 7.2 & 22.4 & \textbf{7.2} & 40.4 & 16.1 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 3.2 & 36.5 & 11.6 & 0.6 & 6.4 & 23.9 & 4.4 & 39.5 & 11.5 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 0.0 & 3.4 & 36.4 & 0.9 & 0.8 & 8.2 & 24.6 & 4.0 & \textbf{41.6} & 10.9 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -45,73 +45,73 @@ MV-16k + DPO & 0.0 & 0.0 & 0.0 & 3.4 & 0.9 & 0.8 & 8.2 & 24.6 & 4.0 & \textbf{41
 \caption{MixtureVitae against other baselines on reasoning benchmarks (1.5B-1.7B scale).}
 \label{tab:evalchemy_table2}
 \scriptsize
-\begin{tabular}{lccccccccccc}
+\begin{tabular}{lcccccccccccc}
 \toprule
-\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
+\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{GSM8K} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
 \midrule
-MV & 0.0 & \textbf{10.0} & 7.5 & 17.4 & 11.7 & -- & 18.6 & 23.9 & 4.1 & 25.6 & 13.2 \\
-MV + SFT & 0.0 & 0.0 & 7.5 & 28.6 & 27.9 & 2.1 & 41.2 & 26.1 & 4.2 & 42.4 & 18.0 \\
-MV + DPO & 0.0 & 0.0 & 15.0 & 27.4 & 27.9 & 1.8 & 40.8 & 24.6 & 3.1 & 42.9 & 18.4 \\
-\midrule
-\addlinespace[0.3em]
-MV-16k & 0.0 & 0.0 & \textbf{27.5} & 46.0 & 31.9 & \textbf{22.7} & 39.8 & 25.2 & 8.2 & 46.9 & 24.8 \\
-MV-16k + SFT & 3.3 & 0.0 & 12.5 & 31.0 & 33.2 & 15.5 & 40.6 & 23.4 & 5.2 & 47.1 & 21.2 \\
-MV-16k + DPO & \textbf{6.7} & 0.0 & 15.0 & 33.6 & 33.2 & 14.9 & 40.0 & 25.2 & 5.4 & 49.5 & 22.3 \\
+MV & 0.0 & \textbf{10.0} & 7.5 & 17.4 & 53.5 & 11.7 & 12.7 & 18.6 & 23.9 & 4.1 & 25.6 & 16.8 \\
+\quad + SFT & 0.0 & 0.0 & 7.5 & 28.6 & 49.3 & 27.9 & 2.1 & 41.2 & 26.1 & 4.2 & 42.4 & 20.8 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 15.0 & 27.4 & 50.5 & 27.9 & 1.8 & 40.8 & 24.6 & 3.1 & 42.9 & 21.3 \\
 \midrule
 \addlinespace[0.3em]
-OpenSci-NM & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 18.9 & 0.1 & 22.9 & 4.2 \\
-OpenSci-NM + SFT & 0.0 & 0.0 & 2.5 & 3.2 & 1.8 & 0.2 & 5.8 & 23.4 & 2.3 & 34.5 & 7.4 \\
-OpenSci-NM + DPO & 0.0 & 0.0 & 5.0 & 2.8 & 0.0 & 0.2 & 3.2 & 22.7 & 3.4 & 34.6 & 7.2 \\
+MV-16k & 0.0 & 0.0 & \textbf{27.5} & 46.0 & 58.6 & 31.9 & \textbf{22.7} & 39.8 & 25.2 & 8.2 & 46.9 & 27.9 \\
+\quad + SFT & 3.3 & 0.0 & 12.5 & 31.0 & 51.9 & 33.2 & 15.5 & 40.6 & 23.4 & 5.2 & 47.1 & 24.0 \\
+\quad + SFT + DPO & \textbf{6.7} & 0.0 & 15.0 & 33.6 & 52.1 & 33.2 & 14.9 & 40.0 & 25.2 & 5.4 & 49.5 & 25.0 \\
 \midrule
 \addlinespace[0.3em]
-OpenSci-NM-16k & 0.0 & 0.0 & 0.0 & 2.0 & 0.9 & 0.0 & 0.8 & 28.8 & 5.1 & 33.2 & 7.1 \\
-OpenSci-NM-16k + SFT & 0.0 & 0.0 & 2.5 & 1.4 & 1.5 & 0.2 & 0.2 & 25.9 & 3.3 & 36.5 & 7.2 \\
-OpenSci-NM-16k + DPO & 0.0 & 0.0 & 2.5 & 1.4 & 0.9 & 0.0 & 0.2 & 27.4 & 2.8 & 37.2 & 7.2 \\
+OpenSci-NM & 0.0 & 0.0 & 0.0 & 0.0 & 4.3 & 0.0 & 0.0 & 0.2 & 18.9 & 0.1 & 22.9 & 4.2 \\
+\quad + SFT & 0.0 & 0.0 & 2.5 & 3.2 & 6.5 & 1.8 & 0.2 & 5.8 & 23.4 & 2.3 & 34.5 & 7.3 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 5.0 & 2.8 & 6.6 & 0.0 & 0.2 & 3.2 & 22.7 & 3.4 & 34.6 & 7.1 \\
 \midrule
 \addlinespace[0.3em]
-FineWeb-Edu & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 24.8 & 0.0 & 28.7 & 5.3 \\
-FineWeb-Edu + SFT & 0.0 & 0.0 & 0.0 & 1.0 & 0.3 & 0.0 & 0.8 & 28.1 & 2.1 & 28.2 & 6.1 \\
-FineWeb-Edu + DPO & 0.0 & 0.0 & 2.5 & 1.6 & 0.0 & 0.0 & 2.2 & 25.8 & 2.2 & 28.9 & 6.3 \\
+OpenSci-NM-16k & 0.0 & 0.0 & 0.0 & 2.0 & 7.0 & 0.9 & 0.0 & 0.8 & 28.8 & 5.1 & 33.2 & 7.1 \\
+\quad + SFT & 0.0 & 0.0 & 2.5 & 1.4 & 6.4 & 1.5 & 0.2 & 0.2 & 25.9 & 3.3 & 36.5 & 7.1 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 1.4 & 7.2 & 0.9 & 0.0 & 0.2 & 27.4 & 2.8 & 37.2 & 7.2 \\
 \midrule
 \addlinespace[0.3em]
-FineWeb-Edu-16k & 0.0 & 0.0 & 2.5 & 1.6 & 1.5 & 0.0 & 0.0 & 25.9 & 7.5 & 33.8 & 7.3 \\
-FineWeb-Edu-16k + SFT & 0.0 & 0.0 & 0.0 & 2.0 & 1.8 & 0.0 & 0.6 & 26.3 & 2.2 & 34.3 & 6.7 \\
-FineWeb-Edu-16k + DPO & 0.0 & 0.0 & 0.0 & 1.4 & 1.2 & -- & 0.2 & 25.8 & 2.6 & 35.7 & 7.4 \\
+FineWeb-Edu & 0.0 & 0.0 & 0.0 & 0.0 & 3.4 & 0.0 & 0.0 & 0.0 & 24.8 & 0.0 & 28.7 & 5.2 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 1.0 & 6.3 & 0.3 & 0.0 & 0.8 & 28.1 & 2.1 & 28.2 & 6.1 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 1.6 & 6.1 & 0.0 & 0.0 & 2.2 & 25.8 & 2.2 & 28.9 & 6.3 \\
 \midrule
 \addlinespace[0.3em]
-DCLM & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 19.7 & 0.2 & 29.7 & 5.0 \\
-DCLM + SFT & 0.0 & 0.0 & 0.0 & 0.2 & 2.4 & -- & 5.4 & 24.4 & 1.0 & 32.4 & 7.3 \\
-DCLM + DPO & 0.0 & 0.0 & 2.5 & 0.2 & 3.0 & -- & 5.6 & 23.6 & 0.6 & 34.5 & 7.8 \\
+FineWeb-Edu-16k & 0.0 & 0.0 & 2.5 & 1.6 & 8.3 & 1.5 & 0.0 & 0.0 & 25.9 & 7.5 & 33.8 & 7.4 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 2.0 & 8.1 & 1.8 & 0.0 & 0.6 & 26.3 & 2.2 & 34.3 & 6.8 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 0.0 & 1.4 & 9.2 & 1.2 & 0.0 & 0.2 & 25.8 & 2.6 & 35.7 & 6.9 \\
 \midrule
 \addlinespace[0.3em]
-Comma0.1 & 0.0 & 0.0 & 0.0 & 0.0 & 4.3 & 0.0 & 9.0 & 22.1 & 0.0 & 28.5 & 6.4 \\
-Comma0.1 + SFT & 0.0 & 0.0 & 0.0 & 0.6 & 8.6 & 1.8 & 22.8 & 25.8 & 4.3 & 36.8 & 10.1 \\
-Comma0.1 + DPO & 0.0 & 0.0 & 0.0 & 1.6 & 9.5 & 1.8 & 22.6 & 27.8 & 5.6 & 39.2 & 10.8 \\
+DCLM & 0.0 & 0.0 & 0.0 & 0.0 & 3.0 & 0.0 & 0.0 & 0.0 & 19.7 & 0.2 & 29.7 & 4.8 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 0.2 & 5.4 & 2.4 & 0.2 & 5.4 & 24.4 & 1.0 & 32.4 & 6.5 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 0.2 & 4.8 & 3.0 & 0.2 & 5.6 & 23.6 & 0.6 & 34.5 & 6.8 \\
 \midrule
 \addlinespace[0.3em]
-Comma0.1-16k & 0.0 & 0.0 & 2.5 & 2.0 & 5.5 & 0.2 & 3.0 & 27.1 & 8.2 & 37.0 & 8.6 \\
-Comma0.1-16k + SFT & 0.0 & 0.0 & 2.5 & 2.2 & 4.9 & 1.6 & 3.4 & 26.1 & 4.5 & 40.7 & 8.6 \\
-Comma0.1-16k + DPO & 0.0 & 0.0 & 2.5 & 1.8 & 7.4 & 2.4 & 6.0 & 23.7 & 5.6 & 43.5 & 9.3 \\
+Comma0.1 & 0.0 & 0.0 & 0.0 & 0.0 & 5.6 & 4.3 & 0.0 & 9.0 & 22.1 & 0.0 & 28.5 & 6.3 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 0.6 & 9.7 & 8.6 & 1.8 & 22.8 & 25.8 & 4.3 & 36.8 & 10.0 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 0.0 & 1.6 & 8.6 & 9.5 & 1.8 & 22.6 & 27.8 & 5.6 & 39.2 & 10.6 \\
 \midrule
 \addlinespace[0.3em]
-SmolLM2 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 1.8 & 22.7 & 0.0 & 24.6 & 4.9 \\
-SmolLM2 + SFT & 0.0 & 0.0 & 2.5 & 6.0 & 19.4 & 4.9 & 37.6 & 24.9 & 5.5 & 44.5 & 14.5 \\
-SmolLM2 + DPO & 0.0 & 0.0 & 2.5 & 7.4 & 18.8 & 4.7 & 38.2 & 23.1 & 4.2 & 45.6 & 14.4 \\
+Comma0.1-16k & 0.0 & 0.0 & 2.5 & 2.0 & 12.2 & 5.5 & 0.2 & 3.0 & 27.1 & 8.2 & 37.0 & 8.9 \\
+\quad + SFT & 0.0 & 0.0 & 2.5 & 2.2 & 6.8 & 4.9 & 1.6 & 3.4 & 26.1 & 4.5 & 40.7 & 8.4 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 1.8 & 7.0 & 7.4 & 2.4 & 6.0 & 23.7 & 5.6 & 43.5 & 9.1 \\
 \midrule
 \addlinespace[0.3em]
-SmolLM2-16k & 0.0 & 0.0 & 2.5 & 11.8 & 12.6 & 0.8 & 36.4 & 23.1 & 9.1 & 45.5 & 14.2 \\
-SmolLM2-16k + SFT & 0.0 & 0.0 & 0.0 & 8.2 & 19.3 & 4.7 & 36.2 & 25.8 & 4.8 & 49.5 & 14.8 \\
-SmolLM2-16k + DPO & 0.0 & 0.0 & 2.5 & 8.2 & 20.9 & 4.9 & 38.2 & 28.1 & 5.8 & 51.4 & 16.0 \\
+SmolLM2 & 0.0 & 0.0 & 0.0 & 0.0 & 29.4 & 0.0 & 0.0 & 1.8 & 22.7 & 0.0 & 24.6 & 7.1 \\
+\quad + SFT & 0.0 & 0.0 & 2.5 & 6.0 & 33.1 & 19.4 & 4.9 & 37.6 & 24.9 & 5.5 & 44.5 & 16.2 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 7.4 & 31.8 & 18.8 & 4.7 & 38.2 & 23.1 & 4.2 & 45.6 & 16.0 \\
 \midrule
 \addlinespace[0.3em]
-Qwen2.5 & 0.0 & 0.0 & 0.0 & 1.0 & 13.8 & 0.2 & 0.0 & 7.4 & 0.2 & 22.7 & 4.5 \\
-Qwen2.5 + SFT & 0.0 & 0.0 & 10.0 & 19.0 & 38.9 & 8.2 & 44.6 & 26.6 & 7.1 & 49.1 & 20.3 \\
-Qwen2.5 + DPO & 3.3 & 0.0 & 7.5 & 22.8 & 38.8 & 8.4 & 44.4 & 28.3 & 7.9 & 51.4 & 21.3 \\
+SmolLM2-16k & 0.0 & 0.0 & 2.5 & 11.8 & 32.1 & 12.6 & 0.8 & 36.4 & 23.1 & 9.1 & 45.5 & 15.8 \\
+\quad + SFT & 0.0 & 0.0 & 0.0 & 8.2 & 33.1 & 19.3 & 4.7 & 36.2 & 25.8 & 4.8 & 49.5 & 16.5 \\
+\quad + SFT + DPO & 0.0 & 0.0 & 2.5 & 8.2 & 33.8 & 20.9 & 4.9 & 38.2 & 28.1 & 5.8 & 51.4 & 17.6 \\
 \midrule
 \addlinespace[0.3em]
-Qwen3 & 0.0 & 0.0 & 22.5 & \textbf{46.4} & 33.0 & -- & 46.8 & 24.8 & \textbf{17.7} & 30.1 & 24.6 \\
-Qwen3 + SFT & 3.3 & 0.0 & 12.5 & 29.6 & \textbf{48.7} & 2.9 & 55.0 & \textbf{30.1} & 13.9 & 56.1 & \textbf{25.2} \\
-Qwen3 + DPO & 3.3 & 0.0 & 7.5 & 30.4 & 47.8 & 4.1 & \textbf{56.0} & 28.1 & 12.5 & \textbf{60.0} & 25.0 \\
+Qwen2.5 & 0.0 & 0.0 & 0.0 & 1.0 & 62.7 & 13.8 & 0.2 & 0.0 & 7.4 & 0.2 & 22.7 & 9.8 \\
+\quad + SFT & 0.0 & 0.0 & 10.0 & 19.0 & 38.9 & 38.9 & 8.2 & 44.6 & 26.6 & 7.1 & 49.1 & 22.0 \\
+\quad + SFT + DPO & 3.3 & 0.0 & 7.5 & 22.8 & 41.6 & 38.8 & 8.4 & 44.4 & 28.3 & 7.9 & 51.4 & 23.1 \\
+\midrule
+\addlinespace[0.3em]
+Qwen3 & 0.0 & 0.0 & 22.5 & \textbf{46.4} & \textbf{72.0} & 33.0 & -- & 46.8 & 24.8 & \textbf{17.7} & 30.1 & \textbf{29.3} \\
+\quad + SFT & 3.3 & 0.0 & 12.5 & 29.6 & 69.0 & \textbf{48.7} & 2.9 & 55.0 & \textbf{30.1} & 13.9 & 56.1 & 29.2 \\
+\quad + SFT + DPO & 3.3 & 0.0 & 7.5 & 30.4 & 69.8 & 47.8 & 4.1 & \textbf{56.0} & 28.1 & 12.5 & \textbf{60.0} & 29.0 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -122,26 +122,26 @@ Qwen3 + DPO & 3.3 & 0.0 & 7.5 & 30.4 & 47.8 & 4.1 & \textbf{56.0} & 28.1 & 12.5 
 \caption{The effect of decontamination on the model's performance on reasoning benchmarks.}
 \label{tab:evalchemy_table3}
 \scriptsize
-\begin{tabular}{llccccccccccc}
+\begin{tabular}{llcccccccccccc}
 \toprule
-\textbf{Base} & \textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
+\textbf{Base} & \textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{GSM8K} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
 \midrule
-\multirow{6}{*}{Not Decontaminated} & MV & 0.0 & 0.0 & 15.0 & 14.6 & 26.6 & 11.2 & 43.0 & 22.2 & 5.0 & 27.8 & 16.5 \\
- & MV + SFT & \textbf{6.7} & 0.0 & 2.5 & 16.4 & 32.5 & 11.2 & 42.6 & 25.6 & 3.5 & 45.0 & 18.6 \\
- & MV + DPO & 0.0 & 0.0 & 7.5 & 17.6 & 32.8 & 12.5 & 43.0 & \textbf{27.8} & 3.5 & 46.7 & 19.1 \\
-\cmidrule{2-13}
- & MV-16k & 3.3 & 6.7 & 20.0 & 36.6 & 30.0 & 16.8 & 41.8 & 22.6 & \textbf{11.0} & 47.9 & 23.7 \\
- & MV-16k + SFT & 0.0 & 0.0 & 5.0 & 18.0 & 29.7 & 10.6 & \textbf{43.2} & 27.3 & 2.7 & 49.5 & 18.6 \\
- & MV-16k + DPO & 0.0 & 0.0 & 0.0 & 18.0 & 30.0 & 11.0 & 41.8 & 25.2 & 3.8 & \textbf{50.7} & 18.1 \\
+\multirow{6}{*}{Not Decontaminated} & MV & 0.0 & 0.0 & 15.0 & 14.6 & 53.1 & 26.6 & 11.2 & 43.0 & 22.2 & 5.0 & 27.8 & 19.9 \\
+ & \quad + SFT & \textbf{6.7} & 0.0 & 2.5 & 16.4 & 50.6 & 32.5 & 11.2 & 42.6 & 25.6 & 3.5 & 45.0 & 21.5 \\
+ & \quad + SFT + DPO & 0.0 & 0.0 & 7.5 & 17.6 & 50.9 & 32.8 & 12.5 & 43.0 & \textbf{27.8} & 3.5 & 46.7 & 22.0 \\
+\cmidrule{2-14}
+ & MV-16k & 3.3 & 6.7 & 20.0 & 36.6 & \textbf{61.8} & 30.0 & 16.8 & 41.8 & 22.6 & \textbf{11.0} & 47.9 & 27.1 \\
+ & \quad + SFT & 0.0 & 0.0 & 5.0 & 18.0 & 51.3 & 29.7 & 10.6 & \textbf{43.2} & 27.3 & 2.7 & 49.5 & 21.6 \\
+ & \quad + SFT + DPO & 0.0 & 0.0 & 0.0 & 18.0 & 51.5 & 30.0 & 11.0 & 41.8 & 25.2 & 3.8 & \textbf{50.7} & 21.1 \\
 \midrule
 \addlinespace[0.3em]
-\multirow{6}{*}{Decontaminated} & MV & 0.0 & \textbf{10.0} & 7.5 & 17.4 & 11.7 & -- & 18.6 & 23.9 & 4.1 & 25.6 & 13.2 \\
- & MV + SFT & 0.0 & 0.0 & 7.5 & 28.6 & 27.9 & 2.1 & 41.2 & 26.1 & 4.2 & 42.4 & 18.0 \\
- & MV + DPO & 0.0 & 0.0 & 15.0 & 27.4 & 27.9 & 1.8 & 40.8 & 24.6 & 3.1 & 42.9 & 18.4 \\
-\cmidrule{2-13}
- & MV-16k & 0.0 & 0.0 & \textbf{27.5} & \textbf{46.0} & 31.9 & \textbf{22.7} & 39.8 & 25.2 & 8.2 & 46.9 & \textbf{24.8} \\
- & MV-16k + SFT & 3.3 & 0.0 & 12.5 & 31.0 & \textbf{33.2} & 15.5 & 40.6 & 23.4 & 5.2 & 47.1 & 21.2 \\
- & MV-16k + DPO & \textbf{6.7} & 0.0 & 15.0 & 33.6 & \textbf{33.2} & 14.9 & 40.0 & 25.2 & 5.4 & 49.5 & 22.3 \\
+\multirow{6}{*}{Decontaminated} & MV & 0.0 & \textbf{10.0} & 7.5 & 17.4 & 53.5 & 11.7 & 12.7 & 18.6 & 23.9 & 4.1 & 25.6 & 16.8 \\
+ & \quad + SFT & 0.0 & 0.0 & 7.5 & 28.6 & 49.3 & 27.9 & 2.1 & 41.2 & 26.1 & 4.2 & 42.4 & 20.8 \\
+ & \quad + SFT + DPO & 0.0 & 0.0 & 15.0 & 27.4 & 50.5 & 27.9 & 1.8 & 40.8 & 24.6 & 3.1 & 42.9 & 21.3 \\
+\cmidrule{2-14}
+ & MV-16k & 0.0 & 0.0 & \textbf{27.5} & \textbf{46.0} & 58.6 & 31.9 & \textbf{22.7} & 39.8 & 25.2 & 8.2 & 46.9 & \textbf{27.9} \\
+ & \quad + SFT & 3.3 & 0.0 & 12.5 & 31.0 & 51.9 & \textbf{33.2} & 15.5 & 40.6 & 23.4 & 5.2 & 47.1 & 24.0 \\
+ & \quad + SFT + DPO & \textbf{6.7} & 0.0 & 15.0 & 33.6 & 52.1 & \textbf{33.2} & 14.9 & 40.0 & 25.2 & 5.4 & 49.5 & 25.0 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -152,28 +152,64 @@ Qwen3 + DPO & 3.3 & 0.0 & 7.5 & 30.4 & 47.8 & 4.1 & \textbf{56.0} & 28.1 & 12.5 
 \caption{Performance of 0.4B scale models on reasoning benchmarks.}
 \label{tab:evalchemy_table4}
 \scriptsize
-\begin{tabular}{lccccccccccc}
+\begin{tabular}{lcccccccccccc}
 \toprule
-\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
+\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{GSM8K} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
 \midrule
-Baguettotron & 0.0 & \textbf{0.0} & 0.0 & 0.2 & 0.0 & -- & 0.0 & 23.1 & 0.2 & 24.3 & 5.3 \\
-Baguettotron + SFT & 0.0 & \textbf{0.0} & 2.5 & 2.0 & 0.0 & 0.0 & 0.0 & 24.4 & 1.3 & 26.9 & 5.7 \\
-Baguettotron + DPO & 0.0 & \textbf{0.0} & 0.0 & 2.8 & 0.0 & -- & 0.0 & \textbf{26.3} & 1.1 & 30.2 & 6.7 \\
-\midrule
-\addlinespace[0.3em]
-Baguettotron 16k & 0.0 & \textbf{0.0} & 0.0 & 2.0 & 0.6 & -- & 0.0 & 21.6 & 1.8 & \textbf{34.2} & 6.7 \\
-Baguettotron 16k + SFT & 0.0 & \textbf{0.0} & 2.5 & 2.4 & 0.0 & -- & 0.0 & 24.4 & 1.1 & 30.0 & 6.7 \\
-Baguettotron 16k + DPO & 0.0 & \textbf{0.0} & 2.5 & 3.2 & 0.0 & -- & 0.0 & 24.9 & 1.5 & 31.8 & 7.1 \\
+Baguettotron & 0.0 & \textbf{0.0} & 0.0 & 0.2 & 2.3 & 0.0 & 0.0 & 0.0 & 23.1 & 0.2 & 24.3 & 4.5 \\
+\quad + SFT & 0.0 & \textbf{0.0} & 2.5 & 2.0 & 7.7 & 0.0 & 0.0 & 0.0 & 24.4 & 1.3 & 26.9 & 5.9 \\
+\quad + SFT + DPO & 0.0 & \textbf{0.0} & 0.0 & 2.8 & 8.3 & 0.0 & 0.0 & 0.0 & \textbf{26.3} & 1.1 & 30.2 & 6.2 \\
 \midrule
 \addlinespace[0.3em]
-MV (0.4B) & \textbf{3.3} & \textbf{0.0} & 2.5 & 0.6 & 1.2 & 1.0 & 5.2 & 22.4 & 1.1 & 19.6 & 5.7 \\
-MV (0.4B) + SFT & 0.0 & \textbf{0.0} & 2.5 & 6.2 & 0.6 & 7.0 & 12.2 & 25.6 & 1.7 & 27.1 & 8.3 \\
-MV (0.4B) + DPO & 0.0 & \textbf{0.0} & 2.5 & 7.4 & \textbf{15.3} & \textbf{8.2} & \textbf{22.6} & 24.1 & 2.3 & 28.1 & \textbf{11.0} \\
+Baguettotron 16k & 0.0 & \textbf{0.0} & 0.0 & 2.0 & 5.2 & 0.6 & -- & 0.0 & 21.6 & 1.8 & \textbf{34.2} & 6.5 \\
+\quad + SFT & 0.0 & \textbf{0.0} & 2.5 & 2.4 & 8.1 & 0.0 & -- & 0.0 & 24.4 & 1.1 & 30.0 & 6.9 \\
+\quad + SFT + DPO & 0.0 & \textbf{0.0} & 2.5 & 3.2 & 8.7 & 0.0 & -- & 0.0 & 24.9 & 1.5 & 31.8 & 7.3 \\
 \midrule
 \addlinespace[0.3em]
-MV-16k (0.4B) & 0.0 & \textbf{0.0} & \textbf{7.5} & \textbf{19.8} & 6.4 & 0.8 & 13.8 & 22.2 & \textbf{4.3} & 32.6 & 10.7 \\
-MV-16k (0.4B) + SFT & 0.0 & \textbf{0.0} & 2.5 & 6.2 & 8.9 & 1.4 & 13.6 & 22.9 & 2.3 & 29.9 & 8.8 \\
-MV-16k (0.4B) + DPO & 0.0 & \textbf{0.0} & 2.5 & 6.8 & 7.7 & 1.6 & 11.2 & 23.1 & 2.6 & 31.4 & 8.7 \\
+MV (0.4B) & \textbf{3.3} & \textbf{0.0} & 2.5 & 0.6 & 28.7 & 1.2 & 1.0 & 5.2 & 22.4 & 1.1 & 19.6 & 7.8 \\
+\quad + SFT & 0.0 & \textbf{0.0} & 2.5 & 6.2 & 23.1 & 0.6 & 7.0 & 12.2 & 25.6 & 1.7 & 27.1 & 9.6 \\
+\quad + SFT + DPO & 0.0 & \textbf{0.0} & 2.5 & 7.4 & 23.1 & \textbf{15.3} & \textbf{8.2} & \textbf{22.6} & 24.1 & 2.3 & 28.1 & 12.1 \\
+\midrule
+\addlinespace[0.3em]
+MV-16k (0.4B) & 0.0 & \textbf{0.0} & \textbf{7.5} & \textbf{19.8} & \textbf{29.5} & 6.4 & 0.8 & 13.8 & 22.2 & \textbf{4.3} & 32.6 & \textbf{12.4} \\
+\quad + SFT & 0.0 & \textbf{0.0} & 2.5 & 6.2 & 24.5 & 8.9 & 1.4 & 13.6 & 22.9 & 2.3 & 29.9 & 10.2 \\
+\quad + SFT + DPO & 0.0 & \textbf{0.0} & 2.5 & 6.8 & 24.9 & 7.7 & 1.6 & 11.2 & 23.1 & 2.6 & 31.4 & 10.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\begin{table}[ht]
+\centering
+\caption{OpenThoughts3 reasoning post-training (30K samples) applied to SFT checkpoints at 1.7B scale. The + SFT rows are the SFT checkpoints used to initialize the OT30K runs; the + OT30K rows are the resulting models after reasoning post-training.}
+\label{tab:evalchemy_ot30k}
+\scriptsize
+\begin{tabular}{lcccccccccccc}
+\toprule
+\textbf{Model} & \textbf{A24} & \textbf{A25} & \textbf{AMC} & \textbf{M500} & \textbf{GSM8K} & \textbf{HE} & \textbf{LCB} & \textbf{MBPP} & \textbf{GPQA} & \textbf{JEE} & \textbf{IFE} & \textbf{Avg} \\
+\midrule
+MV-16k + SFT & \textbf{3.3} & 0.0 & 12.5 & 31.0 & 51.9 & 33.2 & \textbf{15.5} & 40.6 & 23.4 & 5.2 & 47.1 & 24.0 \\
+\quad + OT30K & 0.0 & \textbf{6.7} & \textbf{27.5} & \textbf{48.6} & 52.9 & 8.0 & -- & 1.8 & 28.8 & 7.4 & 26.4 & 20.8 \\
+\midrule
+\addlinespace[0.3em]
+FineWeb-Edu-16k + SFT & 0.0 & 0.0 & 0.0 & 2.0 & 8.1 & 1.8 & 0.0 & 0.6 & 26.3 & 2.2 & 34.3 & 6.8 \\
+\quad + OT30K & 0.0 & 0.0 & 0.0 & 0.0 & 9.5 & 0.0 & -- & 0.0 & 25.4 & -- & 20.5 & 6.2 \\
+\midrule
+\addlinespace[0.3em]
+Comma0.1-16k + SFT & 0.0 & 0.0 & 2.5 & 2.2 & 6.8 & 4.9 & 1.6 & 3.4 & 26.1 & 4.5 & 40.7 & 8.4 \\
+\quad + OT30K & 0.0 & 0.0 & 0.0 & 0.0 & 15.6 & 0.3 & -- & 0.0 & 24.1 & -- & 22.1 & 6.9 \\
+\midrule
+\addlinespace[0.3em]
+SmolLM2-16k + SFT & 0.0 & 0.0 & 0.0 & 8.2 & 33.1 & 19.3 & 4.7 & 36.2 & 25.8 & 4.8 & 49.5 & 16.5 \\
+\quad + OT30K & 0.0 & 0.0 & 2.5 & 5.4 & 30.1 & 12.6 & -- & 19.4 & 29.5 & 2.0 & 31.4 & 13.3 \\
+\midrule
+\addlinespace[0.3em]
+Qwen2.5 + SFT & 0.0 & 0.0 & 10.0 & 19.0 & 38.9 & 38.9 & 8.2 & 44.6 & 26.6 & 7.1 & 49.1 & 22.0 \\
+\quad + OT30K & 0.0 & 0.0 & 17.5 & 37.0 & 59.2 & 9.1 & -- & 3.8 & 25.2 & -- & 29.0 & 20.1 \\
+\midrule
+\addlinespace[0.3em]
+Qwen3 + SFT & \textbf{3.3} & 0.0 & 12.5 & 29.6 & \textbf{69.0} & \textbf{48.7} & 2.9 & \textbf{55.0} & \textbf{30.1} & \textbf{13.9} & \textbf{56.1} & \textbf{29.2} \\
+\quad + OT30K & 0.0 & 0.0 & 0.0 & 8.2 & 30.6 & 5.2 & -- & 9.8 & 26.8 & 1.3 & 33.2 & 11.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
