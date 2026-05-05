@@ -96,6 +96,7 @@ BENCHMARKS_FULL_NAMES = list(BENCHMARKS_MAPPING.values())
 DEFAULT_CUSTOM_CAPTION = "Selected models on reasoning benchmarks."
 DEFAULT_CUSTOM_LABEL = "tab:evalchemy_custom"
 DEFAULT_CUSTOM_GROUP_NAME = "Selected Models"
+DEFAULT_TABLE2_FIGURE = "figures/table2_average.pdf"
 DIVIDER = "DIVIDER"
 
 
@@ -843,7 +844,7 @@ FIXED_TABLE_SPECS = [
         False,
     ),
     (
-        "MixtureVitae against other baselines on reasoning benchmarks (1.5B-1.7B scale).",
+        "Phase 1 (Tulu3 SFT + DPO) reasoning suite at 1.7B scale, 300B token pretraining for the matched compute references; SmolLM2, Qwen2.5, and Qwen3 use substantially more pretraining data. Numbers are decontaminated. Benchmark abbreviations follow Table~\\ref{tab:benchmark_mapping}; A24/A25 = AIME24/25, AMC = AMC23, M500 = MATH500, HE = HumanEval, LCB = LiveCodeBench, GPQA = GPQA-Diamond, JEE = JEEBench, IFE = IFEval.",
         "tab:evalchemy_table2",
         TABLE2_GROUP_SPECS,
         False,
@@ -928,7 +929,7 @@ def resolve_group_models(group_specs):
 def render_incremental_name(base: str, model_name: str) -> str:
     if model_name == base or not model_name.startswith(base):
         return model_name
-    suffix = model_name[len(base):].lstrip()
+    suffix = model_name[len(base) :].lstrip()
     if suffix == "+ DPO":
         suffix = "+ SFT + DPO"
     return r"\quad " + suffix
@@ -1126,8 +1127,206 @@ def write_missing_scores_csv(get_score, resolved_groups):
     print("Missing benchmarks successfully written to missing_scores.csv")
 
 
+@dataclass(frozen=True)
+class Table2AverageRow:
+    group_name: str
+    variant: str
+    score: float
+
+
+def infer_table2_variant(model_name: str) -> str:
+    if model_name.endswith("+ DPO"):
+        return "+SFT+DPO"
+    if model_name.endswith("+ SFT"):
+        return "+SFT"
+    return "base"
+
+
+def build_table2_average_rows(get_scores_dict) -> list[Table2AverageRow]:
+    _, _, group_specs, _ = FIXED_TABLE_SPECS[1]
+    resolved_groups = resolve_group_models(group_specs)
+    rows = []
+    for group_name, models in resolved_groups:
+        for model_name, hf_id in models:
+            if model_name == DIVIDER or hf_id is None:
+                continue
+            avg_score = get_scores_dict(hf_id)["Avg"]
+            if avg_score == "-":
+                continue
+            rows.append(
+                Table2AverageRow(
+                    group_name=group_name,
+                    variant=infer_table2_variant(model_name),
+                    score=float(avg_score),
+                )
+            )
+    return rows
+
+
+def write_table2_figure(
+    df: pd.DataFrame,
+    output: str = DEFAULT_TABLE2_FIGURE,
+    *,
+    annotate_mv_diff: bool = False,
+):
+    _, get_scores_dict = build_score_accessors(df)
+    rows = build_table2_average_rows(get_scores_dict)
+    if not rows:
+        print(
+            "Warning: no table 2 average scores available, so no figure was generated."
+        )
+        return
+
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Matplotlib is guaranteed
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    variants = ["base", "+SFT", "+SFT+DPO"]
+    colors = {"base": "#b7b7b7", "+SFT": "#6c9bc9", "+SFT+DPO": "#365b8c"}
+    group_names = list(dict.fromkeys(row.group_name for row in rows))
+    scores_by_group = {(row.group_name, row.variant): row.score for row in rows}
+
+    fig, ax = plt.subplots(figsize=(5.5, 3.0))
+    x_positions = list(range(len(group_names)))
+    bar_width = 0.25
+    offsets = [-bar_width, 0, bar_width]
+
+    for variant, offset in zip(variants, offsets):
+        values = [
+            scores_by_group.get((group_name, variant)) for group_name in group_names
+        ]
+        bar_positions = [
+            x_position + offset
+            for x_position, value in zip(x_positions, values)
+            if value is not None
+        ]
+        bar_values = [value for value in values if value is not None]
+        ax.bar(
+            bar_positions,
+            bar_values,
+            width=bar_width,
+            label=variant,
+            color=colors[variant],
+            edgecolor="black",
+            linewidth=0.4,
+            zorder=3,
+        )
+
+    # Remove top and right borders
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    # Y-Axis adjustments
+    max_score = max(row.score for row in rows)
+    ax.set_ylabel("Reasoning suite average (%)", fontsize=8)
+    ax.set_ylim(0, 33)
+    ax.tick_params(axis="y", labelsize=7)
+
+    # X-Axis adjustments
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(
+        group_names, rotation=45, ha="right", rotation_mode="anchor", fontsize=7
+    )
+    ax.tick_params(axis="x", pad=4)
+
+    # Softer grid lines
+    ax.grid(
+        axis="y",
+        linestyle="--",
+        alpha=0.6,
+        color="#a0a0a0",
+        linewidth=0.6,
+        zorder=-1,
+    )
+    ax.set_axisbelow(True)
+
+    # Legend moved up to avoid overlap with annotation lines
+    legend = ax.legend(
+        loc="upper right",
+        bbox_to_anchor=(0.98, 1.02),
+        ncols=3,
+        frameon=False,
+        fontsize=7,
+    )
+    legend.set_zorder(10)
+
+    if annotate_mv_diff:
+        mv_groups = {"MV", "MV-16k"}
+        mv_scores = [row.score for row in rows if row.group_name in mv_groups]
+        if mv_scores:
+            mv_max = max(mv_scores)
+            overall_max = max_score
+            if overall_max > mv_max:
+                delta = overall_max - mv_max
+
+                # Horizontal guide lines changed to orange
+                ax.axhline(
+                    mv_max,
+                    color="#d98c3c",
+                    linestyle=(0, (2, 2)),
+                    linewidth=1.0,
+                    alpha=0.9,
+                    zorder=1,
+                )
+                ax.axhline(
+                    overall_max,
+                    color="#d98c3c",
+                    linestyle=(0, (2, 2)),
+                    linewidth=1.0,
+                    alpha=0.9,
+                    zorder=1,
+                )
+
+                x_arrow = len(group_names) / 2.0 + 1.0
+
+                # "I" Shaped Annotation changed to orange to match
+                ax.annotate(
+                    "",
+                    xy=(x_arrow, overall_max),
+                    xytext=(x_arrow, mv_max),
+                    xycoords="data",
+                    textcoords="data",
+                    arrowprops=dict(
+                        arrowstyle="|-|",
+                        mutation_scale=3,
+                        color="#d98c3c",
+                        linewidth=0.8,
+                        shrinkA=0,
+                        shrinkB=0,
+                    ),
+                    zorder=4,
+                )
+
+                # Delta Text positioned underneath the bottom horizontal line
+                ax.text(
+                    x_arrow,
+                    mv_max - 0.5,
+                    f"{delta:.1f}",
+                    ha="center",
+                    va="top",
+                    fontsize=6,
+                    color="#222222",
+                    zorder=5,
+                )
+
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight", pad_inches=0.05)
+    plt.close(fig)
+    print(f"Table 2 figure successfully written to {output_path}")
+
+
 def generate_and_save_latex(
-    df: pd.DataFrame, tables_file="tables.tex", appendix_file="appendix.tex"
+    df: pd.DataFrame,
+    tables_file="tables.tex",
+    appendix_file="appendix.tex",
+    table2_figure_file=DEFAULT_TABLE2_FIGURE,
+    *,
+    annotate_mv_diff: bool = False,
 ):
     get_score, get_scores_dict = build_score_accessors(df)
     resolved_groups = [
@@ -1153,6 +1352,7 @@ def generate_and_save_latex(
     fixed_table_groups = [group for groups in resolved_groups for group in groups]
     write_appendix(appendix_file, fixed_table_groups)
     write_missing_scores_csv(get_score, fixed_table_groups)
+    write_table2_figure(df, table2_figure_file, annotate_mv_diff=annotate_mv_diff)
 
 
 def parse_model_indices(spec: str, total_models: int) -> list[int]:
@@ -1207,6 +1407,72 @@ def select_indices_interactively() -> list[int]:
             return parse_model_indices(raw_value, len(MODEL_REGISTRY))
         except ValueError as exc:
             print(f"Invalid selection: {exc}")
+
+
+def print_fixed_table_choices():
+    for index, (caption, label, _, _) in enumerate(FIXED_TABLE_SPECS, start=1):
+        print(f"{index:>3}. [{label}] {caption}")
+
+
+def select_fixed_table_interactively() -> int:
+    if not sys.stdin.isatty():
+        raise ValueError(
+            "Interactive table selection requires a TTY. Pass --table-index instead."
+        )
+
+    print_fixed_table_choices()
+    total = len(FIXED_TABLE_SPECS)
+    while True:
+        raw_value = input(f"Enter table number (1-{total}): ").strip()
+        try:
+            value = int(raw_value)
+        except ValueError:
+            print(f"Invalid selection: '{raw_value}' is not an integer.")
+            continue
+        if value < 1 or value > total:
+            print(f"Invalid selection: {value} is out of bounds (1-{total}).")
+            continue
+        return value - 1
+
+
+def write_table_mapping_csv(table_index: int, output: str):
+    if table_index < 0 or table_index >= len(FIXED_TABLE_SPECS):
+        raise ValueError(
+            f"Table index {table_index + 1} is out of bounds. "
+            f"Valid range is 1-{len(FIXED_TABLE_SPECS)}."
+        )
+
+    caption, label, group_specs, _ = FIXED_TABLE_SPECS[table_index]
+    resolved_groups = resolve_group_models(group_specs)
+
+    rows = []
+    for group_name, models in resolved_groups:
+        for model_name, hf_id in models:
+            if model_name == DIVIDER or hf_id is None:
+                continue
+            rows.append(
+                {
+                    "table_label": label,
+                    "table_caption": caption,
+                    "group_name": group_name,
+                    "model_name": model_name,
+                    "huggingface_model_id": hf_id,
+                }
+            )
+
+    output_path = Path(output)
+    if output_path.parent and str(output_path.parent) not in ("", "."):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).reindex(
+        columns=[
+            "table_label",
+            "table_caption",
+            "group_name",
+            "model_name",
+            "huggingface_model_id",
+        ],
+    ).to_csv(output_path, index=False)
+    print(f"Table mapping CSV successfully written to {output_path}")
 
 
 def build_custom_groups(indices: list[int]):
@@ -1371,6 +1637,30 @@ def main():
         default="scores.csv",
         help="Path to read scores CSV for --latex and --custom-table.",
     )
+    parser.add_argument(
+        "--table-mapping-csv",
+        action="store_true",
+        help="Export a CSV mapping model names to Hugging Face IDs for one fixed table.",
+    )
+    parser.add_argument(
+        "--table-index",
+        type=int,
+        default=None,
+        help="1-based index of the fixed table to export with --table-mapping-csv. "
+        "If omitted, an interactive picker is shown.",
+    )
+    parser.add_argument(
+        "--mapping-output",
+        type=str,
+        default="model_mapping.csv",
+        help="Output path for --table-mapping-csv. Defaults to model_mapping.csv.",
+    )
+    parser.add_argument(
+        "--annotate-mv-diff",
+        "-a",
+        action="store_true",
+        help="On table 2 bar chart (with --latex): draw MV vs global max guide lines and Δ when global max strictly exceeds MV/MV-16k max.",
+    )
 
     args = parser.parse_args()
 
@@ -1388,7 +1678,7 @@ def main():
     if args.latex:
         if df is None:
             df = load_scores_dataframe(args.csv)
-        generate_and_save_latex(df)
+        generate_and_save_latex(df, annotate_mv_diff=args.annotate_mv_diff)
         did_work = True
 
     if args.custom_table:
@@ -1411,9 +1701,26 @@ def main():
         )
         did_work = True
 
+    if args.table_mapping_csv:
+        try:
+            if args.table_index is not None:
+                if args.table_index < 1 or args.table_index > len(FIXED_TABLE_SPECS):
+                    raise ValueError(
+                        f"Table index {args.table_index} is out of bounds. "
+                        f"Valid range is 1-{len(FIXED_TABLE_SPECS)}."
+                    )
+                table_index = args.table_index - 1
+            else:
+                table_index = select_fixed_table_interactively()
+        except ValueError as exc:
+            parser.error(str(exc))
+        write_table_mapping_csv(table_index, args.mapping_output)
+        did_work = True
+
     if not did_work:
         print(
-            "Nothing to do: pass --collect, --latex, --custom-table, --list-models, or a combination."
+            "Nothing to do: pass --collect, --latex, --custom-table, --table-mapping-csv, --list-models, or a combination. "
+            "Use --latex with -a / --annotate-mv-diff for optional MV delta on the table 2 figure."
         )
 
 
