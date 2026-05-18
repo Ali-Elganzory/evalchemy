@@ -652,6 +652,23 @@ def cli_evaluate(args: Optional[argparse.Namespace] = None) -> None:
             f"The following tasks could not be found: {[task for task in task_list if task not in task_manager.tasks and task not in pretrain_task_manager.all_tasks]}"
         )
 
+    # Only check for OpenAI API keys if at least one task requires an annotator model
+    # TODO: Should we just skip the evaluation that requires the annotator model if the annotator model is not set or fail completely?
+    if args.annotator_model in LIST_OPENAI_MODELS and any(
+        task_manager.requires_annotator_model(task) for task in task_list
+    ):
+        if not os.getenv("OPENAI_API_KEY"):
+            raise ValueError(
+                f"Please set OPENAI_API_KEY to allow usage of {args.annotator_model}"
+                f"to evaluate the following tasks: {[task for task in task_list if task_manager.requires_annotator_model(task)]}"
+            )
+
+    # Check if any task is not in either task manager
+    if any(task not in task_manager.tasks and task not in pretrain_task_manager.all_tasks for task in task_list):
+        raise ValueError(
+            f"The following tasks could not be found: {[task for task in task_list if task not in task_manager.tasks and task not in pretrain_task_manager.all_tasks]}"
+        )
+
     # Initialize model
     try:
         lm = initialize_model(args.model, args.model_args, batch_size=args.batch_size)
