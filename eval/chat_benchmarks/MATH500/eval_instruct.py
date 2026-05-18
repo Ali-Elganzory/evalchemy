@@ -8,6 +8,7 @@ from lm_eval.api.model import LM
 from lm_eval.tasks.hendrycks_math.utils import is_equiv, last_boxed_only_string, remove_boxed
 
 from eval.task import BaseBenchmark
+from eval.utils.parsers import extract_math_answer
 
 # Modified version of hendrycks_math with additional instruction to mark the solution with \\boxed
 # https://github.com/mlfoundations/evalchemy/blob/e70a45e41cb2ada273d6bb98e75dba303ec31f8b/eval/chat_benchmarks/AMC23/eval_instruct.py#L15
@@ -190,8 +191,17 @@ class MATH500Benchmark(BaseBenchmark):
         Returns:
             str: Extracted final answer. Returns empty string if no answer found in \boxed.
         """
+        # Smart parser (from Ali-Elganzory/evalchemy): handles <think> tags,
+        # LaTeX wrappers and natural-language "final answer" phrasings, trying
+        # \boxed{} first. Falls back to the plain hendrycks_math extraction so
+        # behaviour never regresses.
         try:
-            answer = remove_boxed(last_boxed_only_string(output))
-            return answer
-        except:
+            answer = extract_math_answer(output)
+            if answer:
+                return answer
+        except Exception:
+            pass
+        try:
+            return remove_boxed(last_boxed_only_string(output))
+        except Exception:
             return ""
