@@ -1,24 +1,181 @@
-from abc import ABC, abstractmethod
-from typing import Dict, List, Callable, Any, Optional, Type
-import os
 import importlib.util
-import sys
 import inspect
+import json
 import logging
+import os
+import random
+import sys
+from abc import ABC, abstractmethod
 from itertools import islice
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
+import lm_eval.models as lm_eval_models
+from lm_eval.api.registry import get_model
+import lm_eval
+import numpy as np
+import torch
 import torch.distributed as dist
-from lm_eval.api.model import LM
 from lm_eval.api.instance import Instance
+from lm_eval.api.model import LM
+
+try:
+    from lm_eval.utils import hash_string
+except Exception:  # pragma: no cover - fallback if lm_eval layout changes
+
+    def hash_string(string: str) -> str:
+        import hashlib
+
+        return hashlib.sha256(string.encode("utf-8")).hexdigest()
 
 
 class BaseBenchmark(ABC):
     """Abstract base class for implementing LLM evaluation benchmarks."""
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        logger: Optional[logging.Logger] = None,
+        system_instruction: Optional[str] = None,
+        log_samples: bool = False,
+    ):
         self.logger = logger or logging.getLogger(self.__class__.__name__)
+        self.system_instruction = system_instruction
+        # When enabled, every generation that flows through ``compute`` is
+        # recorded so it can be written out (``--log_samples``). This is the
+        # universal funnel used by *all* benchmarks, so enabling it here makes
+        # response logging work for every benchmark (HumanEval included),
+        # regardless of what each benchmark returns from ``evaluate_responses``.
+        self.log_samples = log_samples
+        self._logged_samples: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def _extract_target(doc: Any) -> str:
+        """Best-effort extraction of a reference answer from a benchmark doc.
+
+        Used only for the per-sample ``target``/``target_hash`` fields, so an
+        empty string is an acceptable fallback when no obvious key exists.
+        """
+        if isinstance(doc, dict):
+            for key in (
+                "answer",
+                "expected_answer",
+                "target",
+                "label",
+                "gold",
+                "gt",
+                "solution",
+                "reference_solution",
+                "canonical_solution",
+            ):
+                if key in doc and doc[key] is not None:
+                    return str(doc[key])
+        return ""
+
+    def _record_samples(self, instances: List[Instance], outputs: List[str]) -> None:
+        """Record one sample per (instance, output) pair for ``--log_samples``.
+
+        Called from :meth:`compute` on rank 0 only. Safe to call multiple times
+        per benchmark (e.g. HumanEval calls ``compute`` once per language and
+        the math benchmarks once per repetition) - samples accumulate.
+        """
+        for instance, output in zip(instances, outputs):
+            doc = getattr(instance, "doc", None)
+            args_tuple = instance.args if hasattr(instance, "args") else (instance.arguments,)
+            prompt = args_tuple[0] if len(args_tuple) > 0 else ""
+            gen_kwargs = args_tuple[1] if len(args_tuple) > 1 else {}
+            target = self._extract_target(doc)
+
+            try:
+                doc_repr = json.dumps(doc, default=str, ensure_ascii=False, sort_keys=True)
+            except Exception:
+                doc_repr = str(doc)
+            prompt_repr = prompt if isinstance(prompt, str) else json.dumps(prompt, default=str, ensure_ascii=False)
+
+            self._logged_samples.append(
+                {
+                    "task_name": getattr(instance, "task_name", None),
+                    "doc_id": getattr(instance, "idx", None),
+                    "repeat_idx": getattr(instance, "repeat_idx", 0),
+                    "doc": doc,
+                    "prompt": prompt,
+                    "gen_kwargs": gen_kwargs,
+                    "resps": [output],
+                    "filtered_resps": [output],
+                    "target": target,
+                    "doc_hash": hash_string(doc_repr),
+                    "prompt_hash": hash_string(prompt_repr),
+                    "target_hash": hash_string(str(target)),
+                }
+            )
+
+    def get_logged_samples(self) -> List[Dict[str, Any]]:
+        """Return all samples recorded so far for this benchmark."""
+        return self._logged_samples
+
+    def _normalize_model_args(self, model: LM, instances: List[Instance]) -> List[Instance]:
+        for instance in instances:
+            seeds = None
+            if "seed" in instance.args[1]:
+                seeds = instance.args[1]["seed"]
+
+                random.seed(seeds[0])
+                np.random.seed(seeds[1])
+                torch.manual_seed(seeds[2])
+
+                if isinstance(model, get_model("openai-chat-completions")) or isinstance(
+                    model, get_model("openai-completions")
+                ):
+                    instance.args[1]["seed"] = seeds[0] if "seed" in instance.args[1] else None
+                elif (
+                    isinstance(model, get_model("vllm"))
+                    or "UploadInstancesToHF" in model.__class__.__name__
+                ):
+                    instance.args[1]["seed"] = seeds[0] if "seed" in instance.args[1] else None
+                else:  # Huggingface does not support seed
+                    _ = instance.args[1].pop("seed") if "seed" in instance.args[1] else None
+            if "max_new_tokens" in instance.args[1]:
+                max_new_tokens = instance.args[1].pop("max_new_tokens")
+
+                print("max_new_tokens:", max_new_tokens)  # DEBUG
+                if isinstance(model, get_model("openai-chat-completions")) or isinstance(
+                    model, get_model("openai-completions")
+                ):
+                    instance.args[1]["max_tokens"] = max_new_tokens
+                    if "4o" in model.model:
+                        instance.args[1]["max_tokens"] = min(max_new_tokens, 16384)
+                elif isinstance(model, get_model("vllm")):
+                    instance.args[1]["max_gen_toks"] = max_new_tokens
+                else:  # Huggingface
+                    instance.args[1]["max_new_tokens"] = max_new_tokens
+        return instances
+
+    def _prepare_messages(
+        self, messages: List[Dict[str, str]], model: Optional[LM] = None
+    ) -> Union[List[Dict[str, str]], str]:
+        """Prepare messages with system instruction if available and apply chat template if model is provided.
+
+        Args:
+            messages: List of message dictionaries
+            model: Optional language model instance for applying chat template
+
+        Returns:
+            If model is provided, returns the templated string. Otherwise returns the prepared message list.
+        """
+        if self.system_instruction:
+            messages.insert(0, {"role": "system", "content": self.system_instruction})
+
+        if model is not None:
+            return model.apply_chat_template(messages)
+
+        return messages
 
     def compute(self, model: LM, inputs: List[Instance], do_slice: bool = True) -> List[str]:
+        inputs = self._normalize_model_args(model, inputs)
+
+        # Add task_name to each instance
+        task_name = self.__class__.__name__.replace("Benchmark", "")
+        for instance in inputs:
+            instance.task_name = task_name
+
         if model.world_size > 1 and do_slice:
             prompts = list(islice(inputs, model.rank, len(inputs), model.world_size))
         else:
@@ -37,9 +194,19 @@ class BaseBenchmark(ABC):
                 if sub_results is not None:
                     for i, item in enumerate(sub_results):
                         merged[i * model.world_size + rank] = item
-            return merged
+            final = merged
         else:
-            return results
+            final = results
+
+        # Record prompts/outputs for --log_samples on the primary rank only.
+        # ``inputs`` and ``final`` are both in original (un-sliced) order.
+        if self.log_samples and getattr(model, "rank", 0) == 0:
+            try:
+                self._record_samples(inputs, final)
+            except Exception as e:  # logging must never break evaluation
+                self.logger.warning(f"Failed to record samples for {task_name}: {e}")
+
+        return final
 
     @abstractmethod
     def generate_responses(self, model: LM) -> Dict[str, Any]:
@@ -65,11 +232,15 @@ class TaskManager:
     Provides a unified interface for both class-based benchmarks and legacy tasks.
     """
 
-    def __init__(self, benchmarks_dir: str = "chat_benchmarks", **benchmark_kwargs):
+    def __init__(
+        self, benchmarks_dir: str = "chat_benchmarks", task_list: Optional[List[str]] = None, **benchmark_kwargs
+    ):
         self.logger = logging.getLogger("TaskManager")
         self.tasks: Dict[str, Any] = {}
         self.benchmark_instances: Dict[str, BaseBenchmark] = {}
         self.benchmark_kwargs = benchmark_kwargs
+        self.task_list = task_list
+        self.list_of_tasks_that_require_annotator_model = []
 
         # Load benchmarks from directory
         self._load_benchmarks(benchmarks_dir)
@@ -78,7 +249,20 @@ class TaskManager:
         """Dynamically load benchmarks from the specified directory."""
         current_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), benchmarks_dir)
 
+        # Check if OpenAI API key is available
+        has_openai_key = os.getenv("OPENAI_API_KEY") is not None
+        if not has_openai_key:
+            self.logger.warning("OPENAI_API_KEY not set. Tasks requiring OpenAI will be skipped.")
+
+        # Temporarily set the API key to an empty string to prevent NoneType errors
+        if not has_openai_key:
+            os.environ["OPENAI_API_KEY"] = ""  # Empty string instead of None
+
         for item in os.listdir(current_dir):
+            # Skip loading if task_list is provided and this item is not in it
+            if self.task_list is not None and item not in self.task_list:
+                continue
+
             item_path = os.path.join(current_dir, item)
             if not os.path.isdir(item_path) or item.startswith("__"):
                 continue
@@ -88,38 +272,60 @@ class TaskManager:
                 self.logger.warning(f"eval_instruct.py not found in {item}")
                 continue
 
-            # try:
-            # Import the module
-            sys.path.insert(0, item_path)
-            spec = importlib.util.spec_from_file_location(f"eval.{benchmarks_dir}.{item}.eval_instruct", eval_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            sys.path.pop(0)
+            try:
+                # Import the module
+                sys.path.insert(0, item_path)
+                spec = importlib.util.spec_from_file_location(f"eval.{benchmarks_dir}.{item}.eval_instruct", eval_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                sys.path.pop(0)
 
-            # Find benchmark class
-            benchmark_classes = [
-                cls
-                for _, cls in inspect.getmembers(module, inspect.isclass)
-                if (
-                    issubclass(cls, BaseBenchmark)
-                    and cls != BaseBenchmark
-                    and cls.__module__.replace(".", "/") in eval_path
+                # Find benchmark class
+                benchmark_classes = [
+                    cls
+                    for _, cls in inspect.getmembers(module, inspect.isclass)
+                    if (
+                        issubclass(cls, BaseBenchmark)
+                        and cls != BaseBenchmark
+                        and cls.__module__.replace(".", "/") in eval_path
+                    )
+                ]
+
+                if not benchmark_classes:
+                    self.logger.warning(f"No BaseBenchmark subclass found in {item}")
+                    continue
+
+                if len(benchmark_classes) > 1:
+                    self.logger.warning(f"Multiple benchmark classes found in {item}, using first one")
+
+                benchmark_class = benchmark_classes[0]
+
+                # Check if this benchmark requires OpenAI as annotator model
+                requires_annotator = "annotator_model" in inspect.signature(benchmark_class.__init__).parameters
+
+                # Check if the benchmark explicitly requires OpenAI for annotation
+                requires_openai = (
+                    hasattr(benchmark_class, "REQUIRES_OPENAI_ANNOTATOR") and benchmark_class.REQUIRES_OPENAI_ANNOTATOR
                 )
-            ]
 
-            if not benchmark_classes:
-                self.logger.warning(f"No BaseBenchmark subclass found in {item}")
+                if requires_annotator:
+                    self.list_of_tasks_that_require_annotator_model.append(item)
+
+                if not has_openai_key and requires_openai:
+                    self.logger.warning(
+                        f"Not loading {item} benchmark as it requires OpenAI as annotator model but OPENAI_API_KEY is not set"
+                    )
+                    continue
+
+                self._register_benchmark(item, benchmark_class)
+
+            except Exception as e:
+                self.logger.error(f"Error loading benchmark from {item}: {str(e)}")
                 continue
 
-            if len(benchmark_classes) > 1:
-                self.logger.warning(f"Multiple benchmark classes found in {item}, using first one")
-
-            benchmark_class = benchmark_classes[0]
-            self._register_benchmark(item, benchmark_class)
-
-            # except Exception as e:
-            #     self.logger.error(f"Error loading benchmark from {item}: {str(e)}")
-            #     continue
+        # Clean up temporary environment variable if we set it
+        if not has_openai_key and "OPENAI_API_KEY" in os.environ and os.environ["OPENAI_API_KEY"] == "":
+            del os.environ["OPENAI_API_KEY"]
 
     def _register_benchmark(self, name: str, benchmark_class: Type[BaseBenchmark]):
         """Register a benchmark class and create its instance."""
@@ -128,12 +334,42 @@ class TaskManager:
             valid_kwargs = {}
 
             # Only pass kwargs that the benchmark's __init__ accepts
+            # Filter out None values to let benchmarks use their default values
             for param_name, param in init_params.items():
                 if param_name in self.benchmark_kwargs:
-                    valid_kwargs[param_name] = self.benchmark_kwargs[param_name]
-                    self.logger.debug(f"Passing {param_name} to {name} benchmark")
+                    value = self.benchmark_kwargs[param_name]
+                    # Only pass the argument if it's not None, so benchmarks can use defaults
+                    if value is not None:
+                        valid_kwargs[param_name] = value
+                        self.logger.debug(f"Passing {param_name}={value} to {name} benchmark")
+
+            # Ensure system_instruction is passed if available and not None
+            if (
+                "system_instruction" in self.benchmark_kwargs
+                and self.benchmark_kwargs["system_instruction"] is not None
+            ):
+                valid_kwargs["system_instruction"] = self.benchmark_kwargs["system_instruction"]
 
             instance = benchmark_class(**valid_kwargs)
+
+            # Universal post-construction overrides. These are applied to *every*
+            # benchmark regardless of whether its __init__ declares the keyword,
+            # so CLI flags work consistently across all benchmarks without
+            # touching each eval_instruct.py individually.
+            log_samples = self.benchmark_kwargs.get("log_samples")
+            if log_samples is not None:
+                instance.log_samples = bool(log_samples)
+                self.logger.debug(f"Set log_samples={log_samples} for {name} benchmark")
+
+            n_repeat = self.benchmark_kwargs.get("n_repeat")
+            if n_repeat is not None:
+                if hasattr(instance, "n_repeat"):
+                    instance.n_repeat = int(n_repeat)
+                    self.logger.debug(f"Overriding n_repeat={n_repeat} for {name} benchmark")
+                else:
+                    self.logger.debug(
+                        f"{name} benchmark does not support n_repeat; ignoring n_repeat={n_repeat}"
+                    )
 
             self.tasks[name] = benchmark_class
             self.benchmark_instances[name] = instance
@@ -175,6 +411,30 @@ class TaskManager:
     def is_valid_task(self, task_name: str) -> bool:
         """Check if a task name is valid."""
         return task_name in self.tasks
+
+    def requires_annotator_model(self, task_name: str) -> bool:
+        """
+        Check if a task requires an annotator model by inspecting its __init__ signature.
+
+        Args:
+            task_name: The name of the task to check
+
+        Returns:
+            bool: True if the task's __init__ has an annotator_model parameter, False otherwise
+        """
+        if task_name in self.list_of_tasks_that_require_annotator_model:
+            return True
+        if task_name not in self.tasks:
+            self.logger.warning(f"Task not found: {task_name}")
+            return False
+
+        task_cls = self.tasks[task_name]
+
+        # Get the signature of the task's __init__ method
+        init_params = inspect.signature(task_cls.__init__).parameters
+
+        # Check if 'annotator_model' is in the parameters
+        return "annotator_model" in init_params
 
 
 def evaluate(

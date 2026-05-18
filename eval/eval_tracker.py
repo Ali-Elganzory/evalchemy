@@ -1,30 +1,27 @@
-import json
 import getpass
+import json
 import re
+import subprocess
 import time
-from dataclasses import asdict, dataclass
-from huggingface_hub import model_info
-from datetime import datetime
-from pathlib import Path
 import uuid
 from contextlib import contextmanager
-from typing import Tuple, Dict, Any, Optional
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+import logging
+
 
 import torch
-
-from lm_eval.utils import (
-    eval_logger,
-    handle_non_serializable,
-    hash_string,
-)
+from huggingface_hub import model_info
 from lm_eval.loggers.evaluation_tracker import GeneralConfigTracker
-from lm_eval.utils import simple_parse_args_string
+from lm_eval.utils import handle_non_serializable, hash_string, simple_parse_args_string
 
-from database.models import Dataset, Model, EvalResult, EvalSetting
-from database.utils import create_db_engine, create_tables, sessionmaker, get_or_add_model_by_name, get_model_from_db
+from database.models import Dataset, EvalResult, EvalSetting, Model
+from database.utils import create_db_engine, create_tables, get_model_from_db, get_or_add_model_by_name, sessionmaker
+from eval.utils import eval_logger_fn
 
-import subprocess
-
+eval_logger = eval_logger_fn()
 
 def flatten_dict(d: Dict[str, Any], parent_key: str = "", sep: str = "/") -> Dict[str, Any]:
     """
@@ -179,6 +176,63 @@ class DCEvaluationTracker:
         else:
             eval_logger.info("Output path not provided, skipping saving results aggregated")
 
+    def save_results_samples(
+        self,
+        task_name: str,
+        samples: list,
+    ) -> None:
+        """
+        Save per-sample generations (prompts/outputs) for a single task to disk.
+
+        Writes a ``samples_<task>_<date>.jsonl`` file next to the aggregated
+        results, mirroring the layout produced by lm-eval-harness. This is used
+        by ``--log_samples`` and works for every chat benchmark because samples
+        are collected from the universal ``BaseBenchmark.compute`` funnel.
+
+        Args:
+            task_name: Name of the task the samples belong to.
+            samples: List of per-sample dictionaries to serialize as JSON lines.
+
+        Note:
+            Results are saved only if output_path was specified during init.
+        """
+        if not self.output_path:
+            eval_logger.info("Output path not provided, skipping saving sample results")
+            return
+
+        try:
+            eval_logger.info(f"Saving per-sample results for: {task_name}")
+
+            path = Path(self.output_path)
+            if path.suffix == ".json":
+                path = path.parent
+            model_dir = self.general_config_tracker.model_name_sanitized or "model"
+            path = path.joinpath(model_dir)
+            path.mkdir(parents=True, exist_ok=True)
+
+            # Reuse the timestamp from save_results_aggregated when available so
+            # the samples and aggregated files share a run id; fall back to now.
+            date_id = getattr(self, "date_id", None) or datetime.now().isoformat().replace(":", "-")
+            file_results_samples = path.joinpath(f"samples_{task_name}_{date_id}.jsonl")
+
+            with file_results_samples.open("w", encoding="utf-8") as f:
+                for sample in samples:
+                    f.write(
+                        json.dumps(
+                            sample,
+                            default=handle_non_serializable,
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+
+            eval_logger.info(
+                f"Wrote {len(samples)} per-sample records for '{task_name}' to: {file_results_samples}"
+            )
+        except Exception as e:
+            eval_logger.warning(f"Could not save sample results for '{task_name}'")
+            eval_logger.info(repr(e))
+
     def get_or_create_model(
         self, model_name: str, model_id: Optional[str], model_source: str = "hf"
     ) -> Tuple[uuid.UUID, uuid.UUID]:
@@ -314,7 +368,7 @@ class DCEvaluationTracker:
                     session.add(eval_result)
                     eval_logger.info(f"Added {key}:{score} to the database.")
                 else:
-                    eval_logger.warning(f"Omitting '{key}' with score {score} (type: {type(score).__name__})")
+                    eval_logger.warning(f"Omitting '{key}' with (type: {type(score).__name__})")
             session.commit()
         except Exception as e:
             session.rollback()
@@ -362,7 +416,7 @@ class DCEvaluationTracker:
         with self.session_scope() as session:
             if not model_name:
                 args_dict = simple_parse_args_string(eval_log_dict["config"]["model_args"])
-                model_name = args_dict["pretrained"]
+                model_name = args_dict["pretrained"] if "pretrained" in args_dict else args_dict["model"]
 
             if model_source == "hf":
                 weights_location = (

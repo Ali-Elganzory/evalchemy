@@ -1,10 +1,54 @@
 # 🧪 Evalchemy
 
-> *A framework for gold standard language model evaluations*
+> A unified and easy-to-use toolkit for evaluating post-trained language models
 
 ![alt text](https://github.com/mlfoundations/evalchemy/blob/main/image.png)
 
-Evalchemy is a unified and easy-to-use toolkit for evaluating language models, focussing on post-trained models. Evalchemy is developed by the [DataComp community](https://datacomp.ai) and [Bespoke Labs](https://bespokelabs.ai)  and builds on the [LM-Eval-Harness](https://github.com/EleutherAI/lm-evaluation-harness) to provide a unified, easy-to-use platform for language model evaluation. Evalchemy integrates multiple existing benchmarks, such as RepoBench, AlpacaEval, and ZeroEval. We've streamlined the process by:
+Evalchemy is developed by the [DataComp community](https://datacomp.ai) and [Bespoke Labs](https://bespokelabs.ai)  and builds on the [LM-Eval-Harness](https://github.com/EleutherAI/lm-evaluation-harness).
+
+
+## 🎉 What's New 
+
+#### [2025.02.24] New Reasoning Benchmarks
+
+- AIME25 and Alice in Wonderland have been added to [available benchmarks](https://github.com/mlfoundations/evalchemy?tab=readme-ov-file#built-in-benchmarks).
+
+#### [2025.01.30] API Model Support
+
+- [API models via Curator](https://github.com/bespokelabsai/curator/): With `--model curator` you can now evaluate with even more API based models via [Curator](https://github.com/bespokelabsai/curator/), including all those supported by [LiteLLM](https://docs.litellm.ai/docs/providers) 
+
+```
+  python -m eval.eval \
+        --model curator  \
+        --tasks AIME24,MATH500,GPQADiamond \
+        --model_name "gemini/gemini-2.0-flash-thinking-exp-01-21" \
+        --apply_chat_template False \
+        --model_args 'tokenized_requests=False' \
+        --output_path logs
+```
+#### [2025.01.29] New Reasoning Benchmarks
+
+- AIME24, AMC23, MATH500, LiveCodeBench, GPQADiamond, HumanEvalPlus, MBPPPlus, BigCodeBench, MultiPL-E, and CRUXEval have been added to our growing list of [available benchmarks](https://github.com/mlfoundations/evalchemy?tab=readme-ov-file#built-in-benchmarks). This is part of the effort in the [Open Thoughts](https://github.com/open-thoughts/open-thoughts) project. See the [our blog post](https://www.open-thoughts.ai/blog/measure) on using Evalchemy for measuring reasoning models. 
+
+#### [2025.01.28] New Model Support
+- [vLLM models](https://blog.vllm.ai/2023/06/20/vllm.html): High-performance inference and serving engine with PagedAttention technology
+```bash
+python -m eval.eval \
+    --model vllm \
+    --tasks alpaca_eval \
+    --model_args "pretrained=meta-llama/Meta-Llama-3-8B-Instruct" \
+    --batch_size 16 \
+    --output_path logs
+```
+- [OpenAI models](https://openai.com/): Full support for OpenAI's model lineup
+```bash
+python -m eval.eval \
+    --model openai-chat-completions \
+    --tasks alpaca_eval \
+    --model_args "model=gpt-4o-mini-2024-07-18,num_concurrent=32" \
+    --batch_size 16 \
+    --output_path logs 
+```
 
 ### Key Features
 
@@ -27,11 +71,22 @@ We suggest using conda ([installation instructions](https://docs.anaconda.com/mi
 ```bash
 # Create and activate conda environment
 conda create --name evalchemy python=3.10
-conda activate evalchemy      
+conda activate evalchemy
+
+# Clone the repo
+git clone git@github.com:mlfoundations/evalchemy.git   
+cd evalchemy
 
 # Install dependencies
-pip install -e ".[eval]"
+pip install -e .
 pip install -e eval/chat_benchmarks/alpaca_eval
+
+# Note: On some HPC systems you may need to modify pyproject.toml 
+# to use absolute paths for the fschat dependency:
+# Change: "fschat @ file:eval/chat_benchmarks/MTBench"
+# To:     "fschat @ file:///absolute/path/to/evalchemy/eval/chat_benchmarks/MTBench"
+# Or remove entirely and separately run
+# pip install -e eval/chat_benchmarks/MTBench 
 
 # Log into HuggingFace for datasets and models.
 huggingface-cli login
@@ -41,7 +96,7 @@ huggingface-cli login
 
 ### Built-in Benchmarks
 - All tasks from [LM Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness)
-- Custom instruction-based tasks (found in `eval/chat_benchmarks/`):
+- Custom instruction-based tasks (found in [`eval/chat_benchmarks/`](eval/chat_benchmarks/)):
   - **MTBench**: [Multi-turn dialogue evaluation benchmark](https://github.com/mtbench101/mt-bench-101)
   - **WildBench**: [Real-world task evaluation](https://github.com/allenai/WildBench)
   - **RepoBench**: [Code understanding and repository-level tasks](https://github.com/Leolty/repobench)
@@ -49,17 +104,36 @@ huggingface-cli login
   - **IFEval**: [Instruction following capability evaluation](https://github.com/google-research/google-research/tree/master/instruction_following_eval)
   - **AlpacaEval**: [Instruction following evaluation](https://github.com/tatsu-lab/alpaca_eval)
   - **HumanEval**: [Code generation and problem solving](https://github.com/openai/human-eval)
+  - **HumanEvalPlus**: [HumanEval with more test cases](https://github.com/evalplus/evalplus)
   - **ZeroEval**: [Logical reasoning and problem solving](https://github.com/WildEval/ZeroEval)
   - **MBPP**: [Python programming benchmark](https://github.com/google-research/google-research/tree/master/mbpp)
+  - **MBPPPlus**: [MBPP with more test cases](https://github.com/evalplus/evalplus)
+  - **BigCodeBench:** [Benchmarking Code Generation with Diverse Function Calls and Complex Instructions](https://arxiv.org/abs/2406.15877)
+
+    > **🚨 Warning:** for BigCodeBench evaluation, we strongly recommend using a Docker container since the execution of LLM generated code on a machine can lead to destructive outcomes. More info is [here](eval/chat_benchmarks/BigCodeBench/README.md).
+  - **MultiPL-E:** [Multi-Programming Language Evaluation of Large Language Models of Code](https://github.com/nuprl/MultiPL-E/)
+  - **CRUXEval:** [Code Reasoning, Understanding, and Execution Evaluation](https://arxiv.org/abs/2401.03065)
+  - **AIME24**: [Math Reasoning Dataset](https://huggingface.co/datasets/di-zhang-fdu/AIME_1983_2024)
+  - **AIME25**: [Math Reasoning Dataset](https://huggingface.co/datasets/TIGER-Lab/AIME25)
+  - **AMC23**: [Math Reasoning Dataset](https://huggingface.co/datasets/AI-MO/aimo-validation-amc)
+  - **MATH500**: [Math Reasoning Dataset](https://huggingface.co/datasets/HuggingFaceH4/MATH-500) split from [Let's Verify Step by Step](https://github.com/openai/prm800k/tree/main?tab=readme-ov-file#math-splits)
+  - **LiveCodeBench**: [Benchmark of LLMs for code](https://livecodebench.github.io/)
+  - **LiveBench**: [A benchmark for LLMs designed with test set contamination and objective evaluation in mind](https://livebench.ai/#/)
+  - **GPQA Diamond**: [A Graduate-Level Google-Proof Q&A Benchmark](https://huggingface.co/datasets/Idavidrein/gpqa)
+  - **Alice in Wonderland**: [Simple Tasks Showing Complete Reasoning Breakdown in LLMs](https://arxiv.org/abs/2406.02061)
   - **Arena-Hard-Auto** (Coming soon): [Automatic evaluation tool for instruction-tuned LLMs](https://github.com/lmarena/arena-hard-auto)
   - **SWE-Bench** (Coming soon): [Evaluating large language models on real-world software issues](https://github.com/princeton-nlp/SWE-bench)
   - **SafetyBench** (Coming soon): [Evaluating the safety of LLMs](https://github.com/thu-coai/SafetyBench)
+  - **SciCode Bench** (Coming soon): [Evaluate language models in generating code for solving realistic scientific research problems](https://github.com/scicode-bench/SciCode)
   - **Berkeley Function Calling Leaderboard** (Coming soon): [Evaluating ability of LLMs to use APIs](https://gorilla.cs.berkeley.edu/blogs/13_bfcl_v3_multi_turn.html)
+  
+
+We have recorded reproduced results against published numbers for these benchmarks in [`reproduced_benchmarks.md`](reproduced_benchmarks.md).
 
 
 ### Basic Usage
 
-Make sure your `OPENAI_API_KEY` is set in your environment before running evaluations.
+Make sure your `OPENAI_API_KEY` is set in your environment before running evaluations, if an LLM judge is required. 
 
 ```bash
 python -m eval.eval \
@@ -112,14 +186,32 @@ Through LM-Eval-Harness, we support all HuggingFace models and are currently add
 
 To choose a model, simply set 'pretrained=<name of hf model>' where the model name can either be a HuggingFace model name or a path to a local model. 
 
-#### Coming Soon
-- Support for [vLLM models](https://vllm.ai/)
-- Support for [OpenAI](https://openai.com/)
-- Few-shot prompting for instruction benchmarks.
 
-### Multi-GPU Evaluation
+### HPC Distributed Evaluation
 
-For faster evaluation using data parallelism (recommended):
+For even faster evaluation, use full data parallelism and launch a vLLM process for each GPU. 
+
+We have made also made this easy to do at scale across multiple nodes on HPC (High-Performance Computing) clusters:
+
+```bash
+python eval/distributed/launch.py --model_name <model_id> --tasks <task_list> --num_shards <n> --watchdog
+```
+
+Key features:
+- Run evaluations in parallel across multiple compute nodes
+- Dramatically reduce wall clock time for large benchmarks
+- Offline mode support for environments without internet access on GPU nodes
+- Automatic cluster detection and configuration
+- Efficient result collection and scoring
+
+Refer to the [distributed README](eval/distributed/README.md) for more details. 
+
+NOTE: This is configured for specific HPC clusters, but can easily be adapted. Furthermore it can be adapted for a non-HPC setup using `CUDA_VISIBLE_DEVICES` instead of SLURM job arrays. 
+
+
+### Multi-GPU Evaluation 
+
+NOTE: this is slower than doing fully data parallel evaluation (see previous section)
 
 ```bash
 accelerate launch --num-processes <num-gpus> --num-machines <num-nodes> \
@@ -218,15 +310,15 @@ Evalchemy makes running common benchmarks simple, fast, and versatile! We list t
 | Benchmark | Runtime (8xH100) | Batch Size | Total Tokens | Default Judge Cost ($) | GPT-4o-mini Judge Cost ($) | Notes |
 |-----------|------------------|------------|--------------|----------------|-------------------|--------|
 | MTBench | 14:00 | 32 | ~196K | 6.40 | 0.05 | |
-| WildBench | 38:00 | 32 | ~2.2M | 30.00 | 0.43 | Using GPT-4-mini judge |
-| RepoBench | 46:00 | 4 | - | - | - | Lower batch size due to memory |
+| WildBench | 38:00 | 32 | ~2.2M | 30.00 | 0.43 | |
+| RepoBench | 46:00 | 4 | ~23K | - | - | Lower batch size due to memory |
 | MixEval | 13:00 | 32 | ~4-6M | 3.36 | 0.76 | Varies by judge model |
 | AlpacaEval | 16:00 | 32 | ~936K | 9.40 | 0.14 | |
-| HumanEval | 4:00 | 32 | - | - | - | No API costs |
-| IFEval | 1:30 | 32 | - | - | - | No API costs |
-| ZeroEval | 1:44:00 | 32 | - | - | - | Longest runtime |
-| MBPP | 6:00 | 32 | - | - | - | No API costs |
-| MMLU | 7:00 | 32 | - | - | - | No API costs |
+| HumanEval | 4:00 | 32 | ~300 | - | - | No API costs |
+| IFEval | 1:30 | 32 | ~550 | - | - | No API costs |
+| ZeroEval | 1:44:00 | 32 | ~8K | - | - | Longest runtime |
+| MBPP | 6:00 | 32 | 500 | - | - | No API costs |
+| MMLU | 7:00 | 32 | 500 | - | - | No API costs |
 | ARC | 4:00 | 32 | - | - | - | No API costs |
 | DROP | 20:00 | 32 | - | - | - | No API costs |
 
@@ -324,16 +416,21 @@ sudo apt-get -y install cuda-toolkit-12-4
 ```
 
 ## 🏆 Leaderboard Integration
-To track experiments and evaluations, we support logging results to a PostgreSQL database. Details on the entry schemas and database setup can be found in the [database](./database/) directory.
+To track experiments and evaluations, we support logging results to a PostgreSQL database. Details on the entry schemas and database setup can be found in [`database/`](database/).
+
+
+## Contributing
+Thank you to all the contributors for making this project possible!
+Please follow [these instructions](CONTRIBUTING.md) on how to contribute.
 
 ## Citation
 If you find Evalchemy useful, please consider citing us!
 
 ```
-@software{Evalchemy,
-  author = {Guha, Etash and Raoof, Negin and Mercat, Jean and Frankel, Eric and Keh, Sedrick and Grover, Sachin and Smyrnis, George and Vu, Trung and Marten, Ryan and Saad-Falcon, Jon and Choi, Caroline and Arora, Kushal and Merrill, Mike and Deng, Yichuan and Suvarna, Ashima and Bansal, Hritik and Nezhurina, Marianna and Choi, Yejin and Heckel, Reinhard and Oh, Seewong and Hashimoto, Tatsunori and Jitsev, Jenia and Shankar, Vaishaal and Dimakis, Alex and Sathiamoorthy, Mahesh and Schmidt, Ludwig},
-  month = nov,
+@software{Evalchemy: Automatic evals for LLMs,
+  author = {Raoof, Negin and Guha, Etash Kumar and Marten, Ryan and Mercat, Jean and Frankel, Eric and Keh, Sedrick and Bansal, Hritik and Smyrnis, Georgios and Nezhurina, Marianna and Vu, Trung and Sprague, Zayne Rea and Merrill, Mike A and Chen, Liangyu and Choi, Caroline and Khan, Zaid and Grover, Sachin and Feuer, Benjamin and Suvarna, Ashima and Su, Shiye and Zhao, Wanjia and Sharma, Kartik and Ji, Charlie Cheng-Jie and Arora, Kushal and Li, Jeffrey and Gokaslan, Aaron and Pratt, Sarah M and Muennighoff, Niklas and Saad-Falcon, Jon and Yang, John and Aali, Asad and Pimpalgaonkar, Shreyas and Albalak, Alon and Dave, Achal and Pouransari, Hadi and Durrett, Greg and Oh, Sewoong and Hashimoto, Tatsunori and Shankar, Vaishaal and Choi, Yejin and Bansal, Mohit and Hegde, Chinmay and Heckel, Reinhard and Jitsev, Jenia and Sathiamoorthy, Maheswaran and Dimakis, Alex and Schmidt, Ludwig}
+  month = June,
   title = {{Evalchemy}},
-  year = {2024}
+  year = {2025}
 }
 ```

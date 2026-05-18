@@ -73,8 +73,8 @@ dependencies = [
     "mistralai",
     "reka-api",
     "together",
-    "fschat",
     "dashscope",
+    "fschat",  # Use relative path that pip will resolve during installation
     
     # Cloud & Storage
     "gcsfs",
@@ -94,6 +94,7 @@ dependencies = [
     "tree_sitter",
     "asttokens",
     "mypy_extensions",
+    "pyext @ git+https://github.com/penfever/PyExt",
     
     # Web & API
     "fastapi>=0.101.0",
@@ -113,6 +114,7 @@ dependencies = [
     
     # Utilities
     "tqdm",
+    "pqdm",
     "python-box",
     "fire",
     "tiktoken",
@@ -138,6 +140,20 @@ dependencies = [
     "threadpoolctl",
     "jmespath",
     "immutabledict",
+
+    # BigCodeBench
+    "appdirs>=1.4.4",
+    "multipledispatch>=0.6.0",
+    "pqdm>=0.2.0",
+    "tempdir>=0.7.1",
+    "tree_sitter_languages>=1.10.2",
+    "wget>=3.2",
+
+    # SWE-bench
+    "swebench>=3.0.4",
+
+    # LM Eval
+    "lm-eval[vllm] @ git+https://github.com/EtashGuha/lm-evaluation-harness@etashg/tokenize_fix",
 ]
 
 [project.urls]
@@ -150,11 +166,8 @@ dev = [
     "black",
     "isort",
     "flake8",
-]
-eval = [
-    # Using exact package names from their setup files
-    "fschat @ file:eval/chat_benchmarks/MTBench",  # Changed to match the likely package name
-    "lm-eval[vllm]@git+https://github.com/EtashGuha/lm-evaluation-harness@etashg/tokenize_fix",
+    "pre-commit",
+    "isort",
 ]
 
 [tool.hatch.build.targets.wheel]
