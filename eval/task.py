@@ -28,6 +28,11 @@ except Exception:  # pragma: no cover - fallback if lm_eval layout changes
         return hashlib.sha256(string.encode("utf-8")).hexdigest()
 
 
+# Safety margin (tokens) left between prompt and the model context window when
+# capping generation length. From Ali-Elganzory/evalchemy (vLLM crash fix).
+SAFETY_BUFFER_TOKENS = 16
+
+
 class BaseBenchmark(ABC):
     """Abstract base class for implementing LLM evaluation benchmarks."""
 
@@ -136,6 +141,44 @@ class BaseBenchmark(ABC):
                 max_new_tokens = instance.args[1].pop("max_new_tokens")
 
                 print("max_new_tokens:", max_new_tokens)  # DEBUG
+
+                # Cap generation length to the model's context window so prompt
+                # + generation cannot exceed it (prevents vLLM crashes and
+                # degraded/undefined behaviour). Adapted from
+                # Ali-Elganzory/evalchemy commits a9a4fa0/977d755/e93d565.
+                max_model_len = None
+                if isinstance(model, get_model("vllm")):
+                    max_model_len = model.model.llm_engine.model_config.max_model_len
+                elif isinstance(model, get_model("huggingface")):
+                    max_model_len = model.model.config.max_position_embeddings
+
+                if max_model_len is not None:
+                    try:
+                        # Prompt is the templated string in instance.args[0].
+                        prompt = instance.args[0]
+                        prompt_length = len(model.tokenizer.encode(prompt))
+
+                        if prompt_length > max_model_len:
+                            self.logger.warning(
+                                f"Prompt length ({prompt_length}) exceeds model max length ({max_model_len}). "
+                                f"Prompt will be truncated with no room for generation."
+                            )
+
+                        max_allowed = max_model_len - prompt_length - SAFETY_BUFFER_TOKENS
+                        capped_max_new_tokens = min(max_new_tokens, max(1, max_allowed))
+
+                        if capped_max_new_tokens < max_new_tokens:
+                            self.logger.warning(
+                                f"max_new_tokens ({max_new_tokens}) capped to {capped_max_new_tokens} "
+                                f"(prompt: {prompt_length} tokens, model max: {max_model_len})"
+                            )
+
+                        max_new_tokens = capped_max_new_tokens
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to calculate max_new_tokens, using original value: {e}"
+                        )
+
                 if isinstance(model, get_model("openai-chat-completions")) or isinstance(
                     model, get_model("openai-completions")
                 ):
@@ -143,9 +186,9 @@ class BaseBenchmark(ABC):
                     if "4o" in model.model:
                         instance.args[1]["max_tokens"] = min(max_new_tokens, 16384)
                 elif isinstance(model, get_model("vllm")):
-                    instance.args[1]["max_gen_toks"] = max_new_tokens
+                    instance.args[1]["max_gen_toks"] = int(max_new_tokens)
                 else:  # Huggingface
-                    instance.args[1]["max_new_tokens"] = max_new_tokens
+                    instance.args[1]["max_new_tokens"] = int(max_new_tokens)
         return instances
 
     def _prepare_messages(
