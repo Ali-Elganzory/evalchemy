@@ -15,6 +15,7 @@ Run from the evalchemy repo root with an env that has lm_eval installed, e.g.:
     PYTHONPATH=. python -m unittest discover -s tests -v
 """
 
+import argparse
 import json
 import os
 import tempfile
@@ -23,7 +24,7 @@ import unittest
 from lm_eval.api.instance import Instance
 
 from eval.task import BaseBenchmark, TaskManager
-from eval.eval import setup_custom_parser
+from eval.eval import setup_custom_parser, _n_repeat_arg_type
 from eval.eval_tracker import DCEvaluationTracker
 
 
@@ -273,6 +274,67 @@ class TestCLIArgs(unittest.TestCase):
         args = parser.parse_args(["--tasks", "AIME24"])
         self.assertIsNone(args.n_repeat)
         self.assertFalse(args.log_samples)
+
+
+# --------------------------------------------------------------------------- #
+# 5. Per-task n_repeat (CLI map + YAML), with precedence
+# --------------------------------------------------------------------------- #
+class TestNRepeatArgType(unittest.TestCase):
+    def test_global_int(self):
+        self.assertEqual(_n_repeat_arg_type("4"), 4)
+        self.assertEqual(_n_repeat_arg_type("  16 "), 16)
+
+    def test_per_task_map(self):
+        self.assertEqual(
+            _n_repeat_arg_type("AIME24=8,HumanEval=1,default=4"),
+            {"AIME24": 8, "HumanEval": 1, "default": 4},
+        )
+
+    def test_single_pair_map(self):
+        self.assertEqual(_n_repeat_arg_type("AIME24=8"), {"AIME24": 8})
+
+    def test_invalid_forms_raise(self):
+        for bad in ("abc", "AIME24=x", "=4", "AIME24=", "AIME24"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                _n_repeat_arg_type(bad)
+
+    def test_parser_accepts_map(self):
+        args = setup_custom_parser().parse_args(
+            ["--tasks", "AIME24,HumanEval", "--n_repeat", "AIME24=8,default=2"]
+        )
+        self.assertEqual(args.n_repeat, {"AIME24": 8, "default": 2})
+
+
+class TestPerTaskNRepeatResolution(unittest.TestCase):
+    def _manager(self, **kwargs):
+        return TaskManager(task_list=["__none__"], **kwargs)
+
+    def test_per_task_overrides_global(self):
+        tm = self._manager(n_repeat=4, n_repeat_per_task={"RepeatBench": 9})
+        tm._register_benchmark("RepeatBench", _RepeatBenchmark)
+        tm._register_benchmark("OtherBench", _RepeatBenchmark)
+
+        self.assertEqual(tm.get_benchmark("RepeatBench").n_repeat, 9)  # per-task
+        self.assertEqual(tm.get_benchmark("OtherBench").n_repeat, 4)  # global default
+
+    def test_per_task_only_no_global(self):
+        tm = self._manager(n_repeat=None, n_repeat_per_task={"RepeatBench": 3})
+        tm._register_benchmark("RepeatBench", _RepeatBenchmark)
+        tm._register_benchmark("OtherBench", _RepeatBenchmark)
+
+        self.assertEqual(tm.get_benchmark("RepeatBench").n_repeat, 3)
+        # No value for OtherBench anywhere -> benchmark's own default preserved.
+        self.assertEqual(tm.get_benchmark("OtherBench").n_repeat, 1)
+
+    def test_backward_compatible_global_only(self):
+        tm = self._manager(n_repeat=7)  # no n_repeat_per_task kwarg at all
+        tm._register_benchmark("RepeatBench", _RepeatBenchmark)
+        self.assertEqual(tm.get_benchmark("RepeatBench").n_repeat, 7)
+
+    def test_per_task_ignored_when_unsupported(self):
+        tm = self._manager(n_repeat_per_task={"NoRepeatBench": 5})
+        tm._register_benchmark("NoRepeatBench", _NoRepeatBenchmark)
+        self.assertFalse(hasattr(tm.get_benchmark("NoRepeatBench"), "n_repeat"))
 
 
 if __name__ == "__main__":

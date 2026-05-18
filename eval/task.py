@@ -361,14 +361,19 @@ class TaskManager:
                 instance.log_samples = bool(log_samples)
                 self.logger.debug(f"Set log_samples={log_samples} for {name} benchmark")
 
-            n_repeat = self.benchmark_kwargs.get("n_repeat")
-            if n_repeat is not None:
+            # n_repeat resolution: a per-task value (from CLI map or --config
+            # YAML, already merged in eval.py) takes precedence over the global
+            # default, which takes precedence over the benchmark's own default.
+            n_repeat_per_task = self.benchmark_kwargs.get("n_repeat_per_task") or {}
+            n_repeat_default = self.benchmark_kwargs.get("n_repeat")
+            resolved_n_repeat = n_repeat_per_task.get(name, n_repeat_default)
+            if resolved_n_repeat is not None:
                 if hasattr(instance, "n_repeat"):
-                    instance.n_repeat = int(n_repeat)
-                    self.logger.debug(f"Overriding n_repeat={n_repeat} for {name} benchmark")
+                    instance.n_repeat = int(resolved_n_repeat)
+                    self.logger.debug(f"Set n_repeat={resolved_n_repeat} for {name} benchmark")
                 else:
                     self.logger.debug(
-                        f"{name} benchmark does not support n_repeat; ignoring n_repeat={n_repeat}"
+                        f"{name} benchmark does not support n_repeat; ignoring n_repeat={resolved_n_repeat}"
                     )
 
             self.tasks[name] = benchmark_class

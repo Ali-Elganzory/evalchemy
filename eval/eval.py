@@ -65,6 +65,53 @@ def _int_or_none_list_arg_type(max_len: int, value: str, split_char: str = ","):
     return items
 
 
+def _n_repeat_arg_type(value: str):
+    """Parse ``--n_repeat``.
+
+    Accepts either a single integer (applies to every task, backward
+    compatible) or a comma-separated ``TASK=N`` map with an optional
+    ``default=N`` fallback entry, e.g.::
+
+        --n_repeat 4
+        --n_repeat AIME24=8,HumanEval=1,default=4
+
+    Returns an ``int`` for the global form, or a ``dict`` of
+    ``{task_name: int}`` (which may contain the special key ``"default"``)
+    for the per-task form.
+    """
+    value = value.strip()
+    if "=" not in value:
+        try:
+            return int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"--n_repeat must be an int or a TASK=N[,...] map, got {value!r}"
+            )
+
+    mapping: Dict[str, int] = {}
+    for pair in value.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        if "=" not in pair:
+            raise argparse.ArgumentTypeError(
+                f"--n_repeat map entry {pair!r} is not of the form TASK=N"
+            )
+        key, _, raw = pair.partition("=")
+        key = key.strip()
+        if not key:
+            raise argparse.ArgumentTypeError(f"--n_repeat map entry {pair!r} has an empty task name")
+        try:
+            mapping[key] = int(raw.strip())
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"--n_repeat value for {key!r} is not an integer: {raw.strip()!r}"
+            )
+    if not mapping:
+        raise argparse.ArgumentTypeError("--n_repeat map is empty")
+    return mapping
+
+
 def setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
@@ -324,14 +371,17 @@ def setup_custom_parser():
 
     parser.add_argument(
         "--n_repeat",
-        type=int,
+        type=_n_repeat_arg_type,
         default=None,
         help=(
             "Number of times each example is generated/evaluated (e.g. for "
-            "avg@k / pass@k). Overrides the per-benchmark default for every "
-            "benchmark that supports repetition (AIME24/AIME25/AMC23/GPQADiamond/"
-            "HMMT/MATH500/HLE/JEEBench/CodeElo/CodeForces/LiveCodeBench*). "
-            "Benchmarks without repetition support ignore it."
+            "avg@k / pass@k). Either a single int applied to every benchmark, "
+            "or a per-task map: `AIME24=8,HumanEval=1,default=4`. Per-task CLI "
+            "values override per-task --config YAML values, which override a "
+            "global value, which overrides each benchmark's own default. "
+            "Applies to benchmarks that support repetition (AIME24/AIME25/AMC23/"
+            "GPQADiamond/HMMT/MATH500/HLE/JEEBench/CodeElo/CodeForces/"
+            "LiveCodeBench*); others ignore it."
         ),
     )
 
@@ -575,6 +625,8 @@ def cli_evaluate(args: Optional[argparse.Namespace] = None) -> None:
         parser = setup_custom_parser()
         args = parse_eval_args(parser)
 
+    yaml_global_n_repeat: Optional[int] = None
+    yaml_per_task_n_repeat: Dict[str, int] = {}
     if args.config is not None:
         # This overwrites `--tasks` and `--batch_size`
         with open(args.config, "r") as file:
@@ -584,12 +636,33 @@ def cli_evaluate(args: Optional[argparse.Namespace] = None) -> None:
         args.annotator_model = tasks_yaml.get("annotator_model", args.annotator_model)
         args.max_tokens = int(tasks_yaml.get("max_tokens", args.max_tokens))
         if "n_repeat" in tasks_yaml:
-            args.n_repeat = int(tasks_yaml["n_repeat"])
+            yaml_global_n_repeat = int(tasks_yaml["n_repeat"])
+        # Optional per-task n_repeat on each task entry in the YAML.
+        yaml_per_task_n_repeat = {
+            t["task_name"]: int(t["n_repeat"]) for t in tasks_yaml["tasks"] if "n_repeat" in t
+        }
     else:
         batch_sizes_list = [
             int(args.batch_size) if args.batch_size != "auto" else args.batch_size
             for _ in range(len(args.tasks.split(",")))
         ]
+
+    # Resolve --n_repeat. The CLI value is an int (global), a {task: n} map
+    # (optionally with a "default" key), or None. Precedence, highest first:
+    # CLI per-task -> YAML per-task -> CLI global/default -> YAML global ->
+    # each benchmark's own default.
+    cli_n_repeat = args.n_repeat
+    cli_global_n_repeat: Optional[int] = None
+    cli_per_task_n_repeat: Dict[str, int] = {}
+    if isinstance(cli_n_repeat, int):
+        cli_global_n_repeat = cli_n_repeat
+    elif isinstance(cli_n_repeat, dict):
+        cli_per_task_n_repeat = {k: v for k, v in cli_n_repeat.items() if k != "default"}
+        cli_global_n_repeat = cli_n_repeat.get("default")
+    n_repeat_default = cli_global_n_repeat if cli_global_n_repeat is not None else yaml_global_n_repeat
+    n_repeat_per_task = dict(yaml_per_task_n_repeat)
+    n_repeat_per_task.update(cli_per_task_n_repeat)  # CLI per-task wins over YAML
+    args.n_repeat_resolved = {"default": n_repeat_default, "per_task": n_repeat_per_task}
 
     # # Initialize evaluation tracker
     # if args.output_path:
@@ -629,7 +702,8 @@ def cli_evaluate(args: Optional[argparse.Namespace] = None) -> None:
         task_list=task_list,
         system_instruction=args.system_instruction,
         log_samples=args.log_samples,
-        n_repeat=args.n_repeat,
+        n_repeat=n_repeat_default,
+        n_repeat_per_task=n_repeat_per_task,
     )
     pretrain_task_manager = PretrainTaskManager(args.verbosity, include_path=args.include_path)
 
@@ -822,7 +896,15 @@ def add_results_metadata(results: Dict, batch_sizes_list: List[int], args: argpa
         "limit": args.limit,
         "annotator_model": args.annotator_model,
         "max_tokens": args.max_tokens if args.max_tokens is not None else "default",
-        "n_repeat": args.n_repeat if getattr(args, "n_repeat", None) is not None else "default",
+        "n_repeat": (
+            args.n_repeat_resolved
+            if getattr(args, "n_repeat_resolved", None)
+            and (
+                args.n_repeat_resolved.get("default") is not None
+                or args.n_repeat_resolved.get("per_task")
+            )
+            else "default"
+        ),
         # "bootstrap_iters": args.bootstrap_iters,
         "gen_kwargs": args.gen_kwargs,
         "random_seed": args.seed[0],
